@@ -1,47 +1,118 @@
 ---
-title: "Quickstart"
-description: "Begin with a guide on the fastest path to a successful outcome"
+title: "Get Started with MLB Performance Analytics"
+sidebarTitle: "Quickstart"
+description: "Set up your Python environment and run the MLB Performance Analytics notebook to classify batters using Random Forest models in under 10 minutes."
 ---
 
-Describe how someone begins using your product. What is the first thing they need to do? Are there any prerequisites?
+This guide walks you through everything you need to go from a fresh clone to a fully running classification pipeline. By the end, you will have loaded the 911-batter Statcast dataset, engineered the three target variables, trained all three Random Forest classifiers, evaluated their performance, and generated feature importance charts — all inside a single Jupyter notebook.
 
-A quickstart should take someone from zero to using your product. They'll get a quick win and a sense of what they can accomplish.
+<Tip>
+  Python **3.9 or higher** is recommended. The project badge targets 3.9+, and some Scikit-Learn and Pandas APIs used in the notebook may behave differently on older versions.
+</Tip>
 
-## Prerequisites
+---
 
-Before you begin, you must have:
-
-- Requirement one (for example, Node.js 18+, a free account, an API key)
-- Requirement two (for example, a compatible device, a compatible browser, a compatible operating system)
-
-## Get started
+## Steps
 
 <Steps>
-  <Step title="Install">
-    Describe how to install your product or sign up.
+  <Step title="Clone the Repository">
+    Clone the project from GitHub and move into the project directory:
 
     ```bash
-    npm install your-package
+    git clone https://github.com/Stronauta/MLB-Performance-Analytics.git
+    cd MLB-Performance-Analytics
     ```
   </Step>
-  <Step title="Configure">
-    Describe any setup or configuration needed before first use.
 
+  <Step title="Set Up a Python Environment">
+    Create an isolated environment to avoid dependency conflicts. Choose either **virtualenv** or **conda**:
+
+    **Using venv (built-in):**
     ```bash
-    your-cli init
+    python -m venv .venv
+
+    # Activate on macOS/Linux
+    source .venv/bin/activate
+
+    # Activate on Windows
+    .venv\Scripts\activate
+    ```
+
+    **Using conda:**
+    ```bash
+    conda create -n mlb-analytics python=3.11
+    conda activate mlb-analytics
     ```
   </Step>
-  <Step title="Run it">
-    Show the first thing a user does to see it working.
+
+  <Step title="Install Dependencies">
+    The notebook imports `pandas`, `numpy`, `matplotlib`, `seaborn`, and `scikit-learn`. Install them all at once, along with Jupyter:
 
     ```bash
-    your-cli start
+    pip install pandas numpy matplotlib seaborn scikit-learn jupyter
     ```
+  </Step>
+
+  <Step title="Configure the Data Path">
+    The notebook contains a **hardcoded Windows absolute path** that must be updated before the notebook will run on any other machine.
+
+    <Note>
+      The first code cell in `MLBStats.ipynb` sets `ruta = r"D:\Python\Modulo 6\Databases\MLBDATA.csv"`. This path does not exist outside the original development machine. You must replace it with a path that points to `Data/MLBDATA.csv` inside the cloned repository.
+    </Note>
+
+    Open the notebook and replace the `ruta` variable in the first code cell:
+
+    ```python
+    # Original (Windows path — update this)
+    ruta = r"D:\Python\Modulo 6\Databases\MLBDATA.csv"
+
+    # Cross-platform replacement
+    import os
+    ruta = os.path.join(os.path.dirname(os.getcwd()), "Data", "MLBDATA.csv")
+    # Or simply, when running from the Notebook/ directory:
+    ruta = "../Data/MLBDATA.csv"
+    ```
+
+    The simplest option is the relative path `"../Data/MLBDATA.csv"`, which works correctly when Jupyter is launched from the repository root and the notebook is opened from the `Notebook/` subdirectory.
+  </Step>
+
+  <Step title="Run the Notebook">
+    Launch Jupyter from the repository root:
+
+    ```bash
+    jupyter notebook Notebook/MLBStats.ipynb
+    ```
+
+    Once the notebook opens in your browser, run all cells in order with **Kernel → Restart & Run All**. The full pipeline — data loading, cleaning, feature engineering, model training, evaluation, and visualization — executes end-to-end without any additional input required.
   </Step>
 </Steps>
 
-<Tip>
-  Give people a way to get help. This could be a link to a support page, a chat with a customer support agent, or a forum for your product.
+---
 
-  Example: Need help? Reach out to us at [support@yourcompany.com](mailto:support@yourcompany.com).
-</Tip>
+## What Runs in the Notebook
+
+The notebook executes a complete machine learning pipeline from raw data to evaluated models:
+
+**1. Data Loading & Inspection**
+The CSV is loaded into a Pandas DataFrame (`df.shape` confirms 911 rows × 76 columns). Basic `info()` and `head()` calls verify column types and check for nulls across all 76 Statcast features.
+
+**2. Exploratory Data Analysis**
+Seaborn and Matplotlib visualizations explore distributions of key metrics (wOBA, launch speed, bat speed, walk rate, strikeout rate) and their relationships — including a scatterplot comparing plate discipline scores against overall offensive performance.
+
+**3. Target Variable Engineering**
+Three classification targets are constructed directly from dataset columns:
+- `Rendimiento_labels` — `pd.qcut` on `woba` into Low / Medium / High thirds
+- `elite_hitter` — binary flag for batters at or above the 80th percentile of `woba`
+- `clase_disciplina_home` — `pd.cut` on a composite `disciplina_en_home` score (walk rate, strikeout rate, whiff rate, raw whiffs) into Baja / Media / Alta
+
+**4. Model Training — Three Classifiers**
+Each target gets its own `RandomForestClassifier` trained on an 80/20 stratified split:
+- **Overall Performance model**: `RandomForestClassifier(n_estimators=300, max_depth=8, random_state=42)`
+- **Elite Status model**: `RandomForestClassifier(n_estimators=300, max_depth=8, class_weight='balanced', random_state=42)`
+- **Plate Discipline model**: trained on the discipline-specific feature subset (`bb_percent`, `k_percent`, `swing_miss_percent`, `whiffs`)
+
+**5. Model Evaluation**
+Each model is evaluated with accuracy, precision, recall, and F1-score via Scikit-Learn's `classification_report`. Results are printed per-class so performance on minority classes (e.g., elite batters) is clearly visible.
+
+**6. Feature Importance Visualization**
+`rf.feature_importances_` is extracted from each trained model and plotted as a horizontal bar chart, revealing which Statcast metrics most strongly drive each classification — for example, `woba` and `xwoba` for overall performance, and `bb_percent` and `whiffs` for plate discipline.

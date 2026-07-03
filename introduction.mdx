@@ -1,0 +1,99 @@
+---
+title: "MLB Performance Analytics: Classifying Batters with Machine Learning"
+sidebarTitle: "Introduction"
+description: "An overview of the MLB Performance Analytics project — how it uses Random Forest classifiers and Statcast data to classify MLB batters across three performance dimensions."
+---
+
+MLB Performance Analytics applies Random Forest machine learning classifiers to MLB Statcast data to systematically classify 911 professional batters across three distinct offensive dimensions: overall performance, elite status, and plate discipline. By combining traditional batting statistics with advanced Statcast metrics — including exit velocity, launch angle, bat speed, and swing behavior — the project demonstrates how machine learning can uncover complex patterns that differentiate offensive profiles far beyond what conventional statistics reveal.
+
+## Classification Targets
+
+Three target variables were engineered directly from the dataset, each capturing a different facet of batter performance:
+
+<CardGroup cols={3}>
+  <Card title="Overall Offensive Performance" icon="chart-bar">
+    **`Rendimiento_labels`** — Batters are divided into **Low**, **Medium**, and **High** performance tiers using `pd.qcut` on wOBA (Weighted On-Base Average), ensuring a balanced class distribution across all three groups.
+  </Card>
+  <Card title="Elite Status" icon="trophy">
+    **`elite_hitter`** — A binary label that flags batters in the **top 20% of wOBA** as elite (1) and all others as non-elite (0). The model uses `class_weight='balanced'` to handle the inherent class imbalance.
+  </Card>
+  <Card title="Plate Discipline" icon="eye">
+    **`clase_disciplina_home`** — Batters are classified as **Low (Baja)**, **Medium (Media)**, or **High (Alta)** discipline using a composite score that weighs walk rate, strikeout rate, swing-and-miss percentage, and raw whiff counts.
+  </Card>
+</CardGroup>
+
+### Overall Offensive Performance (`Rendimiento_labels`)
+
+The first classification target uses **wOBA** — a single statistic that weights each offensive outcome (singles, doubles, home runs, walks) by its true run value — as the foundation for grouping batters. Applying `pd.qcut` with three quantile bins guarantees that classes are approximately equal in size, avoiding the imbalanced training sets that can skew model accuracy. The resulting labels are **Low**, **Medium**, and **High** offensive performance.
+
+### Elite Status (`elite_hitter`)
+
+The second target identifies batters who are genuinely exceptional rather than merely above average. Any batter whose wOBA falls at or above the **80th percentile** of the full dataset is labeled elite (1); everyone else is labeled non-elite (0). Because the top 20% threshold produces a naturally unbalanced binary target, the Random Forest classifier for this model uses `class_weight='balanced'` to compensate.
+
+### Plate Discipline (`clase_disciplina_home`)
+
+The third target measures how well a batter makes decisions at the plate. A composite **`disciplina_en_home`** score is computed from four Statcast signals:
+
+- `bb_percent` (walk rate) — positive contribution
+- `k_percent` (strikeout rate) — negative contribution
+- `swing_miss_percent` (whiff rate) — negative contribution
+- `whiffs` (raw whiff count) — negative contribution
+
+Batters are then classified into **Baja** (Low), **Media** (Medium), and **Alta** (High) discipline using fixed-range bins with `pd.cut`.
+
+---
+
+## Dataset
+
+The dataset covers **911 MLB batters** drawn from the 2023–2025 regular seasons. Each row represents an aggregated batter profile containing **76 Statcast features** that span traditional counting stats, batted-ball metrics, pitch-tracking data, and expected statistics.
+
+| Attribute | Value |
+|---|---|
+| Rows (batters) | 911 |
+| Features | 76 |
+| Seasons | 2023, 2024, 2025 (regular season) |
+| Source | [Baseball Savant / MLB Statcast](https://baseballsavant.mlb.com) |
+
+Key features include `woba`, `xwoba`, `ba`, `slg`, `obp`, `iso`, `babip`, `launch_speed`, `launch_angle`, `bat_speed`, `swing_length`, `barrel_percent`, `hardhit_percent`, `bb_percent`, `k_percent`, `swing_miss_percent`, `whiffs`, `swings`, `takes`, and more.
+
+<Tip>
+  The full Statcast search query used to pull this data — filtering by batter type across the 2023–2025 regular seasons — is documented at the top of the notebook in `Notebook/MLBStats.ipynb`.
+</Tip>
+
+---
+
+## Technology Stack
+
+| Tool | Role |
+|---|---|
+| **Python 3.9+** | Primary development language |
+| **Pandas** | Data ingestion, cleaning, feature engineering, and target construction |
+| **NumPy** | Numerical operations and array handling |
+| **Matplotlib / Seaborn** | Exploratory data analysis and feature importance visualizations |
+| **Scikit-Learn** | `RandomForestClassifier`, `train_test_split`, evaluation metrics (`accuracy_score`, `precision_score`, `recall_score`, `f1_score`) |
+
+---
+
+## Project Structure
+
+```
+MLB-Performance-Analytics/
+├── Notebook/
+│   └── MLBStats.ipynb      # Full analysis: EDA, feature engineering, model training, evaluation
+├── Data/
+│   └── MLBDATA.csv         # 911-row × 76-column Statcast dataset
+└── img/
+    ├── disciplina en plato vs rendimiento.png
+    ├── Variables importante en la disciplina plato.png
+    ├── Variables importantes para saber el rendimiento general.png
+    ├── Variable importantes en determionar un elite o no.png
+    └── wOba en jugadores Elite y no Elite.png
+```
+
+The single Jupyter notebook `MLBStats.ipynb` contains the complete end-to-end pipeline: data loading, exploratory analysis, feature engineering, target variable construction, model training for all three classifiers, performance evaluation, and feature importance visualization.
+
+---
+
+<Note>
+  This project was developed as an academic capstone for **Módulo 6 of the Data Science & Machine Learning program** by Group 3 — D.A.T.A (Arlene Miniel, Elvis Rafael Rosado, Felix Mendoza, and Samir Ernesto Castillo). It is intended to demonstrate how machine learning models identify patterns in baseball statistics to differentiate offensive batter profiles.
+</Note>

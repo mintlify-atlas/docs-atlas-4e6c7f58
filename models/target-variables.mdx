@@ -1,0 +1,172 @@
+---
+title: "Classification Targets: Three Ways to Measure Batter Performance"
+sidebarTitle: "Target Variables"
+description: "How three target variables — overall performance, elite status, and plate discipline — are constructed from MLB Statcast metrics to serve as labels for Random Forest classifiers."
+---
+
+Three classification labels are constructed directly from the raw Statcast data. Rather than predicting a numeric value, each target frames batter performance as a classification problem — grouping players into discrete, meaningful categories based on real offensive metrics. This approach allows the Random Forest models to learn which statistical signatures distinguish performance tiers, elite ability, and plate decision-making quality from one another.
+
+<Tabs>
+  <Tab title="Overall Performance">
+    ## Rendimiento_labels — Overall Performance
+
+    The first target, `Rendimiento_labels`, captures a batter's general offensive production by binning their **wOBA (Weighted On-Base Average)** into three equal quantile groups: **Bajo (Low)**, **Medio (Medium)**, and **Alto (High)**.
+
+    ### Why wOBA?
+
+    wOBA is a comprehensive offensive metric that assigns different weights to each type of hit based on its actual run value — a walk is worth less than a single, which is worth less than a double, and so on. This makes it a far more accurate measure of overall offensive contribution than simpler stats like batting average or on-base percentage.
+
+    ### Label Construction
+
+    Using `pd.qcut` with `q=3` ensures that each class receives approximately the same number of players, producing balanced training labels:
+
+    ```python
+    df["Rendimiento_labels"] = pd.qcut(
+        df["woba"],
+        q=3,
+        labels=["Bajo", "Medio", "Alto"]
+    )
+    ```
+
+    ### Classes
+
+    | Label | Meaning | Quantile Range |
+    |-------|---------|---------------|
+    | `Bajo` | Low performance | Bottom third of wOBA |
+    | `Medio` | Medium performance | Middle third of wOBA |
+    | `Alto` | High performance | Top third of wOBA |
+
+    <Note>
+      Quantile-based splitting guarantees balanced class sizes by design. This avoids the class imbalance issues that can arise when using fixed thresholds on skewed distributions.
+    </Note>
+  </Tab>
+
+  <Tab title="Elite Status">
+    ## elite_hitter — Elite Status
+
+    The second target, `elite_hitter`, asks a binary question: is this batter among the truly exceptional offensive performers in the league? A player is labeled **elite (1)** if their wOBA falls in the **top 20%** of all batters; otherwise they are labeled **non-elite (0)**.
+
+    ### Why Binary?
+
+    While `Rendimiento_labels` partitions performance into thirds, the elite model focuses specifically on separating the highest-impact batters from the rest of the field. This framing is useful for scouting and roster construction contexts where identifying peak performers matters more than ranking the entire population.
+
+    ### Label Construction
+
+    ```python
+    df["elite_hitter"] = (df["woba"] >= df["woba"].quantile(0.80)).astype(int)
+    ```
+
+    ### Class Distribution
+
+    Out of **857 batters** in the cleaned dataset:
+
+    | Class | Label | Count |
+    |-------|-------|-------|
+    | Non-Elite | `0` | 684 |
+    | Elite | `1` | 173 |
+
+    <Note>
+      This 4:1 class imbalance is intentional — the elite tier is, by definition, rare. The Random Forest model for this target uses `class_weight='balanced'` and stratified splitting to handle this imbalance during training.
+    </Note>
+
+    <Tip>
+      The 80th-percentile threshold was chosen to mirror real-world usage: roughly the top 20% of MLB batters in any given season are considered genuinely elite offensive contributors.
+    </Tip>
+  </Tab>
+
+  <Tab title="Plate Discipline">
+    ## plate_discipline — Plate Decision Quality
+
+    The third target measures something different from raw production: the **quality of a batter's decision-making at the plate**. Rather than measuring how often a batter gets hits, it evaluates whether they correctly identify pitches in and out of the strike zone and respond accordingly.
+
+    ### Composite Score
+
+    A weighted composite score (`disciplina_en_home`) is first computed from discipline-related Statcast metrics, rewarding patience and penalizing poor contact decisions:
+
+    ```python
+    df["disciplina_en_home"] = (
+        df["bb_percent"]        * 0.30  # Walk rate — rewards patience
+        + df["takes"]           * 0.20  # Pitches taken — rewards selectivity
+        + df["pa"]              * 0.10  # Plate appearances — activity proxy
+        - df["k_percent"]       * 0.20  # Strikeout rate — penalizes poor decisions
+        - df["swing_miss_percent"] * 0.10  # Swing-and-miss rate — penalizes bad contact
+        - df["whiffs"]          * 0.05  # Raw whiff count
+        - df["swings"]          * 0.05  # Raw swing count
+    )
+    ```
+
+    Players are then classified into three tiers using fixed score bins:
+
+    ```python
+    df["clase_disciplina_home"] = pd.cut(
+        df["disciplina_en_home"],
+        bins=[-999, 200, 800, 1200],
+        labels=["Baja", "Media", "Alta"]
+    )
+    ```
+
+    ### Classes
+
+    | Label | Meaning |
+    |-------|---------|
+    | `Baja` | Low plate discipline |
+    | `Media` | Average plate discipline |
+    | `Alta` | High plate discipline |
+
+    ### Key Input Metrics
+
+    | Metric | Role |
+    |--------|------|
+    | `bb_percent` | Walk rate — primary positive indicator |
+    | `k_percent` | Strikeout rate — primary negative indicator |
+    | `swing_miss_percent` | Contact failure rate |
+    | `takes` | Pitches taken without swinging |
+    | `whiffs` | Swing-and-miss count |
+    | `swings` | Total swings |
+
+    <Tip>
+      Plate discipline captures a dimension of hitting that is largely independent of raw power. A batter with high discipline may not hit many home runs but consistently reaches base, stresses pitchers, and extends at-bats.
+    </Tip>
+  </Tab>
+</Tabs>
+
+---
+
+## Why These Three Targets?
+
+Each target variable measures a fundamentally different dimension of batter performance. Together, they provide a multi-angle picture of what it means to be an effective MLB hitter:
+
+| Target | Dimension | Question Answered |
+|--------|-----------|-------------------|
+| `Rendimiento_labels` | **Volume Production** | How much offensive value does this batter produce overall? |
+| `elite_hitter` | **Peak Performance** | Does this batter belong among the very best in the league? |
+| `plate_discipline` | **Process Quality** | How well does this batter make decisions at the plate? |
+
+A batter can score differently across all three dimensions. A high-contact, low-power hitter might rank `Medio` on overall performance, `0` on elite status, but `Alta` on plate discipline. A slugger might be `Alto` and `elite`, but only `Media` on discipline if they chase breaking balls. Modeling these targets separately lets the project uncover which Statcast features drive each dimension.
+
+---
+
+## Label Distribution Summary
+
+```python
+# Overall Performance
+print(df["Rendimiento_labels"].value_counts())
+# Bajo     ~286
+# Medio    ~286
+# Alto     ~285
+
+# Elite Status
+print(df["elite_hitter"].value_counts())
+# 0    684
+# 1    173
+
+# Plate Discipline
+print(df["clase_disciplina_home"].value_counts())
+# Media    (majority)
+# Baja
+# Alta
+```
+
+<Note>
+  `Rendimiento_labels` is intentionally balanced (equal quantile splits), while `elite_hitter` is intentionally imbalanced (top 20% threshold). `clase_disciplina_home` uses fixed score bins, so its distribution reflects the natural spread of discipline scores across the batter population.
+</Note>

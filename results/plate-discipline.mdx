@@ -1,0 +1,209 @@
+---
+title: "Plate Discipline Classification: Analyzing Strike Zone Decisions"
+sidebarTitle: "Discipline Results"
+description: "Results of the Random Forest model that classifies MLB batter plate discipline — their ability to identify pitches, lay off balls, and make optimal swing decisions."
+---
+
+Plate discipline classification measures how well a batter makes decisions at the plate — whether they swing at strikes, lay off balls outside the zone, and generate productive contact when they do swing. Unlike the performance and elite models, which focus primarily on offensive outcomes, this model targets the **process** behind those outcomes: the pitch-by-pitch decision quality that drives walk rates, strikeout rates, and swing-and-miss frequency. The model uses Statcast metrics like swing-miss rate, walk rate, strikeout rate, raw takes, whiffs, and observed-vs-expected outcome differential to classify each batter as **Baja** (Low), **Media** (Medium), or **Alta** (High) discipline.
+
+---
+
+## What Is Plate Discipline?
+
+In sabermetric terms, **plate discipline** is a batter's ability to distinguish pitches inside the strike zone from pitches outside it, and to act optimally on that distinction. A highly disciplined batter:
+
+- **Swings at strikes** — recognizing hittable pitches in the zone and making contact
+- **Lays off balls** — resisting pitches outside the zone, even when they are close
+- **Draws walks** — converting borderline counts into free passes by not chasing
+- **Avoids unproductive swings** — minimizing swing-and-miss events, especially in two-strike counts
+
+The result of good plate discipline is a measurable statistical signature: **higher walk rates (bb_percent)**, **lower strikeout rates (k_percent)**, and **fewer swing-and-miss events (swing_miss_percent)**. These metrics are the core features in this model.
+
+Plate discipline is analytically important because it is largely independent of raw power. A batter with modest exit velocity can still be an elite offensive producer if they draw walks and avoid strikeouts consistently. Conversely, a powerful hitter who chases frequently undermines their own offensive value by reducing their opportunities to reach base.
+
+---
+
+## Target Variable Construction
+
+The plate discipline label is built as a **composite score** (`disciplina_en_home`) that weights multiple zone-decision metrics, then bins players into three tiers using fixed score boundaries:
+
+```python
+# Composite discipline score construction
+df["disciplina_en_home"] = (
+    df["bb_percent"]        * 0.30   # Walk rate: highest weight (positive discipline)
+    + df["takes"]           * 0.20   # Pitches taken: rewarded for patience
+    + df["pa"]              * 0.10   # Plate appearances: volume normalization
+    - df["k_percent"]       * 0.20   # Strikeout rate: penalized (negative discipline)
+    - df["swing_miss_percent"] * 0.10  # Swing-and-miss rate: penalized
+    - df["whiffs"]          * 0.05   # Raw whiff count: penalized
+    - df["swings"]          * 0.05   # Total swings: slight penalty for aggression
+)
+
+# Classify into three tiers using fixed bins
+df["clase_disciplina_home"] = pd.cut(
+    df["disciplina_en_home"],
+    bins=[-999, 200, 800, 1200],
+    labels=["Baja", "Media", "Alta"]
+)
+```
+
+The key features that feed into both the composite score and directly into the Random Forest classifier are:
+
+| Feature | Direction | Role in Discipline |
+|---------|-----------|-------------------|
+| `swing_miss_percent` | Lower = better | Fraction of swings that completely miss |
+| `bb_percent` | Higher = better | Walk rate (base on balls per plate appearance) |
+| `k_percent` | Lower = better | Strikeout rate (strikeouts per plate appearance) |
+| `takes` | Context-dependent | Total pitches taken without swinging |
+| `whiffs` | Lower = better | Absolute count of swing-and-miss events |
+| `wobadiff` | Positive = good | Observed wOBA minus expected wOBA (outcomes vs quality) |
+
+<Note>
+  The composite score weights **bb_percent** most heavily (0.30) because walk rate is the single most direct measure of zone recognition — a batter who consistently avoids chasing balls outside the strike zone will accumulate walks. Strikeout rate is penalized at the same level (0.20) because strikeouts represent the worst possible swing decision outcome: a committed swing (or called third strike) that produces zero offensive value.
+</Note>
+
+---
+
+## Feature Importance Findings
+
+After training the Random Forest discipline classifier (`n_estimators=300`, `max_depth=8`, `class_weight='balanced'`), feature importances reveal that two metrics dominate all others:
+
+```python
+importancias = pd.Series(
+    rf_disc.feature_importances_,
+    index=features_disc
+).sort_values(ascending=True)
+
+importancias.plot(kind="barh")
+plt.title("Importancia de las variables - Disciplina en el Plato")
+plt.show()
+```
+
+The importance ranking from highest to lowest:
+
+1. **bb_percent** — Walk rate is the strongest single predictor of discipline classification. A high walk rate is the direct downstream effect of recognizing balls outside the zone; it cannot be faked by other mechanics.
+2. **swing_miss_percent** — Swing-and-miss rate is nearly as important as walk rate. It directly measures the failure mode of plate discipline: the batter swings, misses, and gains nothing. High swing-miss rates correlate tightly with Low discipline classification.
+3. **k_percent** — Strikeout rate ranks third. While correlated with swing_miss_percent (high whiff rates lead to strikeouts), k_percent captures additional discipline signal including called third strikes and two-strike count management.
+4. **takes** — Total pitches taken contributes meaningful signal but trails the rate stats. It is heavily influenced by plate appearances, making it a noisier discriminator without normalization.
+5. **whiffs / swings** — Raw count features add marginal information beyond their rate-based counterparts.
+
+<Tip>
+  The dominance of **bb_percent** and **swing_miss_percent** suggests that when scouting for plate discipline, these two rate stats provide the most information per metric. A batter with bb_percent ≥ 12% and swing_miss_percent ≤ 22% is almost certainly in the **Alta** discipline tier in this dataset.
+</Tip>
+
+---
+
+## Discipline vs Performance Correlation
+
+One of the most important findings from this analysis is the **positive correlation between plate discipline classification and overall offensive performance** — visualized in the scatter chart of `disciplina_en_home` score versus `woba` and `xwoba`:
+
+```python
+sns.scatterplot(
+    data=df,
+    x="disciplina_en_home",
+    y="woba",
+    hue="clase_disciplina_home",
+    palette="viridis"
+)
+plt.title("Disciplina vs Rendimiento (wOBA)")
+plt.show()
+```
+
+The key findings from this visualization:
+
+- **Alta discipline batters cluster in the upper-right** of the scatter: high discipline scores correspond to high wOBA values. Batters who control the zone tend to produce more offensively.
+- **Baja discipline batters cluster in the lower-left**: low discipline scores correspond to lower wOBA. Chasing, swinging-and-missing, and strikeout-heavy approaches suppress offensive output.
+- The correlation with **xwOBA is tighter than with wOBA** — expected wOBA, which strips out luck, tracks discipline even more cleanly than observed results. This confirms that discipline improves the *quality* of contact opportunities, not just the counting of walks.
+
+The practical implication: improving plate discipline is one of the highest-leverage development areas for a hitter. A batter who moves from Baja to Media discipline can expect meaningful wOBA improvement even without changes to raw power metrics.
+
+---
+
+## Example Discipline Profiles
+
+Contrasting two players from the dataset illustrates how plate discipline can take different forms — and how it interacts differently with power metrics:
+
+### High Discipline: Juan Soto
+
+Juan Soto is widely regarded as having one of the best eyes at the plate in baseball, and the Statcast data confirms it. His discipline profile:
+
+- **bb_percent ≈ 18%** — Elite walk rate, consistently in the top 5% of MLB batters
+- **swing_miss_percent ≈ 21.5%** — Well below the league average, meaning when Soto swings, he makes contact
+
+Soto's offensive production is not primarily built on raw power — it is built on zone control. By drawing an exceptional volume of walks and rarely chasing, he maximizes plate appearances that result in baserunners. His **Alta** discipline classification directly translates to his high wOBA (0.402), confirming that plate discipline is a genuine driver — not just a byproduct — of his offensive value.
+
+### High Power, Lower Discipline: Kyle Schwarber
+
+Kyle Schwarber represents the opposite profile: significant raw power paired with meaningful discipline challenges.
+
+- **swing_miss_percent ≈ 32.2%** — Well above average, reflecting an aggressive, all-or-nothing approach
+- **k_percent ≈ 28.5%** — Elevated strikeout rate from chasing breaking balls and swinging through velocity
+
+Despite these metrics placing him in a lower discipline tier, Schwarber remains a high-value offensive player because of his exceptional **power production**: elite exit velocity, high barrel rates, and a home run frequency that generates enormous run value on the contact he does make. His case illustrates a key nuance: **plate discipline is one path to offensive value, but not the only one** — raw power can compensate for zone-recognition deficits in ways that pure contact profiles cannot.
+
+---
+
+## Key Statcast Discipline Metrics Explained
+
+<Accordion title="swing_miss_percent — Swing-and-Miss Rate">
+  **Definition**: The percentage of total swings that result in a complete miss (whiff), calculated as:
+
+  ```
+  swing_miss_percent = (whiffs / swings) × 100
+  ```
+
+  **Interpretation**: Lower is better for contact-oriented batters. The MLB average typically falls between 23–26%. Values below 20% indicate strong bat-to-ball skills; values above 35% signal significant swing-and-miss issues that expose a batter to being exploited with spin and velocity late in counts.
+
+  **Importance in this model**: Second-highest feature importance in the discipline classifier. High swing_miss_percent is the clearest mechanical signature of poor plate discipline — the batter committed to a swing on a pitch they could not handle.
+</Accordion>
+
+<Accordion title="bb_percent — Walk Rate">
+  **Definition**: The percentage of plate appearances that result in a walk (base on balls):
+
+  ```
+  bb_percent = (walks / plate appearances) × 100
+  ```
+
+  **Interpretation**: Higher is better. The MLB average is typically 8–9%. Values of **12–14%** are considered strong; **18–20%** is elite-tier (Juan Soto range). Walk rate is the most direct numerical output of plate discipline — a batter who never chases balls outside the zone will naturally accumulate walks when pitchers are unable to throw strikes.
+
+  **Importance in this model**: The single highest-importance feature in the discipline classifier.
+</Accordion>
+
+<Accordion title="k_percent — Strikeout Rate">
+  **Definition**: The percentage of plate appearances that end in a strikeout:
+
+  ```
+  k_percent = (strikeouts / plate appearances) × 100
+  ```
+
+  **Interpretation**: Lower is generally better, but context matters. The MLB average is roughly 22–23%. Values below **15%** indicate strong contact ability and two-strike count management; values above **30%** represent a significant strikeout problem. Note that high-power hitters often carry elevated k_percent as a trade-off for their home run frequency.
+
+  **Importance in this model**: Third-highest feature importance. It is correlated with swing_miss_percent but adds independent signal from called third strikes and two-strike approach.
+</Accordion>
+
+<Accordion title="takes — Total Pitches Taken">
+  **Definition**: The raw count of pitches where the batter did not swing. Includes both called balls and called strikes.
+
+  **Interpretation**: A high `takes` value can reflect either excellent discipline (recognizing balls outside the zone) or an overly passive approach (taking hittable pitches). The composite discipline score rewards `takes` because, in conjunction with a high walk rate, it signals zone recognition rather than passivity. A batter with high `takes` *and* low `bb_percent` may be taking too many strikes, which is a different issue.
+
+  **Importance in this model**: Fourth in importance. Raw count metrics are noisier than rate stats and are heavily influenced by how many plate appearances a player accumulated.
+</Accordion>
+
+<Accordion title="wobadiff — Observed wOBA Minus Expected wOBA">
+  **Definition**: The differential between a batter's observed wOBA and their Statcast-calculated expected wOBA:
+
+  ```
+  wobadiff = woba − xwoba
+  ```
+
+  **Interpretation**:
+  - **Positive wobadiff** (wOBA > xwOBA): The batter outperformed the expected run value of their contact. Could indicate clutch hitting, favorable batted-ball placement, or positive luck.
+  - **Negative wobadiff** (wOBA < xwOBA): The batter underperformed relative to their contact quality. Often reflects bad luck, strong opposing defenses, or unfavorable batted-ball outcomes.
+  - **Near zero**: Expected and observed outcomes are well-aligned.
+
+  **In the context of discipline**: `wobadiff` connects plate decisions to outcomes. A disciplined batter whose `wobadiff` is consistently positive may be making pitch-selection decisions that lead to better pitch quality on contact — choosing to swing at pitches they can drive rather than just any pitch in the zone.
+</Accordion>
+
+<Note>
+  The plate discipline score (`disciplina_en_home`) used to build the classification target is a **composite weighted metric**, not a single Statcast output. It reflects the notebook's modeling choice to combine multiple discipline signals into a single label-construction variable. The Random Forest then learns which of the individual component features are most predictive of the resulting tier classification — which is why bb_percent and swing_miss_percent emerge as the dominant features despite the composite formula weighting them differently.
+</Note>

@@ -1,0 +1,249 @@
+---
+title: "Feature Engineering for MLB Batter Classification"
+sidebarTitle: "Feature Engineering"
+description: "How raw Statcast metrics are selected and transformed into feature sets for three Random Forest classifiers: performance, elite status, and plate discipline."
+---
+
+Feature engineering in this project involves two distinct operations: **selecting the right subsets of the 76 Statcast columns** as inputs (`X`) for each of the three Random Forest classifiers, and **constructing target labels** (`y`) from computed thresholds applied to the raw statistical columns. Rather than feeding all 76 features into each model, each classifier is trained on a focused feature set whose variables have a strong theoretical and empirical connection to the outcome being predicted. The target labels are not sourced from a pre-existing column — they are derived by applying quantile cuts and threshold rules to wOBA and discipline metrics, turning continuous batting statistics into discrete class labels.
+
+---
+
+## Feature Sets per Model
+
+Each of the three classifiers uses a different feature set, chosen to align the input variables with the specific performance dimension being classified.
+
+<Tabs>
+  <Tab title="Performance Model">
+    The performance classifier predicts a batter's **general offensive tier** (Bajo / Medio / Alto). It uses four features that together capture both the quality and quantity of offensive production:
+
+    ```python
+    Caracteristicas = ["xwoba", "hardhit_percent", "barrels_total", "hits"]
+
+    X = df[Caracteristicas]
+    Y = df["Rendimiento_labels"]
+    ```
+
+    | Feature | Why it was chosen |
+    |---------|-------------------|
+    | `xwoba` | Expected weighted on-base average is the single best Statcast summary of overall offensive value, controlling for luck and park effects. It is the most direct predictor of a batter's offensive tier. |
+    | `hardhit_percent` | The percentage of batted balls at 95+ mph exit velocity measures how often a batter makes genuinely hard contact — a consistent differentiator between average and above-average hitters. |
+    | `barrels_total` | The raw count of barreled balls (optimal exit velocity + launch angle combinations) captures power production in absolute terms, complementing the rate-based signal in xwOBA and hardhit_percent. |
+    | `hits` | Total hit count anchors the feature set in real production volume. It ensures that players with elite quality metrics but minimal plate appearances are not over-classified by rate stats alone. |
+
+    <Note>
+      The target label `Rendimiento_labels` is constructed from `woba` (not `xwoba`), so the model learns to predict realized performance tiers using expected/contact-quality inputs. This separation helps the classifier generalize beyond luck-influenced outcomes.
+    </Note>
+  </Tab>
+
+  <Tab title="Elite Model">
+    The elite classifier predicts whether a batter belongs to the **top 20% of hitters by wOBA** — a binary outcome (`1` = elite, `0` = non-elite). The feature set focuses on both expected metrics and actual slugging to capture sustained power and quality of contact:
+
+    ```python
+    features_elite = [
+        "xwoba",
+        "hardhit_percent",
+        "barrels_total",
+        "slg",
+        "xslg"
+    ]
+
+    X = df[features_elite]
+    y = df["elite_hitter"]
+    ```
+
+    | Feature | Why it was chosen |
+    |---------|-------------------|
+    | `xwoba` | The primary signal for elite contact quality. Elite hitters consistently post xwOBA values well above the league average, regardless of short-term luck. |
+    | `hardhit_percent` | Elite hitters make hard contact at significantly higher rates. This feature creates a clear separation between the top tier and the rest of the distribution. |
+    | `barrels_total` | Absolute barrel count reflects sustained elite-level contact across an entire multi-season sample — a hallmark of true power hitters. |
+    | `slg` | Actual slugging percentage incorporates home run power and extra-base hit frequency, both of which are defining traits of elite batters. |
+    | `xslg` | Expected slugging provides a luck-adjusted view of power production, ensuring the model does not conflate a batter who got lucky on flares and bloopers with one producing genuine elite contact. |
+
+    <Tip>
+      Using both `slg` and `xslg` together gives the model a way to detect batters whose actual slugging diverges significantly from expected — a pattern that can indicate either exceptional or poor batted-ball luck, and which the Random Forest can use as a splitting signal.
+    </Tip>
+  </Tab>
+
+  <Tab title="Plate Discipline Model">
+    The plate discipline classifier predicts a batter's **discipline tier** (Baja / Media / Alta) based on their swing decision-making behavior at the plate. These features directly feed into the composite `disciplina_en_home` score used to generate the labels:
+
+    ```python
+    features_disc = [
+        "bb_percent",
+        "k_percent",
+        "swing_miss_percent",
+        "swings",
+        "whiffs",
+        "takes",
+        "pa"
+    ]
+
+    X = df[features_disc]
+    y = df["clase_disciplina_home"]
+    ```
+
+    | Feature | Role in discipline classification |
+    |---------|----------------------------------|
+    | `bb_percent` | Walk rate is the strongest positive signal of plate discipline — batters who draw walks consistently demonstrate strong pitch recognition and zone selectivity. |
+    | `k_percent` | Strikeout rate is the primary negative signal. High strikeout rates indicate a batter is frequently fooled or overly aggressive, lowering their discipline score. |
+    | `swing_miss_percent` | Whiff rate (whiffs / swings) captures how often a batter misses the ball entirely on contact attempts — a direct measure of swing quality and pitch reading. |
+    | `swings` | Total swing volume provides context for the rate-based metrics and reflects a batter's overall aggressiveness at the plate. |
+    | `whiffs` | The raw count of missed swings complements the percentage metric, adding absolute volume information. |
+    | `takes` | Pitches taken (not swung at) are a core component of the discipline composite score. Batters who take more pitches generally have better zone awareness. |
+    | `pa` | Total plate appearances normalizes the discipline model and ensures that the classifier accounts for sample size differences across batters. |
+
+    <Note>
+      The `wobadiff` column (actual wOBA minus xwOBA) was considered for this feature set during EDA, as it can signal whether a batter's outcomes are being inflated or deflated by non-contact factors. It is documented in the dataset but was ultimately not included in the final `features_disc` list used for training.
+    </Note>
+  </Tab>
+</Tabs>
+
+---
+
+## Target Variable Construction
+
+Each of the three models uses a different labeling strategy. The target variable is always derived programmatically from existing numeric columns — never manually annotated.
+
+### 1. Performance Labels — wOBA Quantile Tiers
+
+The `Rendimiento_labels` column divides all 857 batters into three equal-sized groups based on their actual wOBA. Using `pd.qcut` with `q=3` ensures balanced class distribution, which is important for classifier stability.
+
+```python
+df["Rendimiento_labels"] = pd.qcut(
+    df["woba"],
+    q=3,
+    labels=["Bajo", "Medio", "Alto"]
+)
+```
+
+| Label | Meaning |
+|-------|---------|
+| `Bajo` | Bottom third of wOBA values — below-average offensive performance |
+| `Medio` | Middle third — average to slightly above-average production |
+| `Alto` | Top third — strong offensive producers |
+
+<Note>
+  Because `pd.qcut` places exactly one-third of batters in each bin, the Performance model starts with a perfectly balanced three-class target. No resampling or class weighting is required for this classifier.
+</Note>
+
+### 2. Elite Hitter Label — Top 20% wOBA Threshold
+
+The `elite_hitter` column is a binary label: `1` if the batter's wOBA is at or above the 80th percentile across the full clean dataset, `0` otherwise.
+
+```python
+df["elite_hitter"] = (df["woba"] >= df["woba"].quantile(0.80)).astype(int)
+```
+
+This produces a hard cutoff that cleanly separates the truly exceptional batters from the field.
+
+<Warning>
+  This is a deliberately imbalanced label by design — only the top 20% qualify. The resulting class distribution is **684 non-elite (0) vs. 173 elite (1)**, a roughly 4:1 ratio. See [Class Distribution](#class-distribution) below for how the model handles this imbalance.
+</Warning>
+
+### 3. Plate Discipline Label — Composite Score with Fixed Bins
+
+The discipline target is constructed in two steps. First, a composite `disciplina_en_home` score is computed as a weighted linear combination of swing behavior metrics:
+
+```python
+df["disciplina_en_home"] = (
+    df["bb_percent"]        * 0.30 +
+    df["takes"]             * 0.20 +
+    df["pa"]                * 0.10
+    - df["k_percent"]       * 0.20
+    - df["swing_miss_percent"] * 0.10
+    - df["whiffs"]          * 0.05
+    - df["swings"]          * 0.05
+)
+```
+
+Then, fixed bins are applied via `pd.cut` to assign each batter to a discipline class:
+
+```python
+df["clase_disciplina_home"] = pd.cut(
+    df["disciplina_en_home"],
+    bins=[-999, 200, 800, 1200],
+    labels=["Baja", "Media", "Alta"]
+)
+```
+
+| Label | Score Range | Meaning |
+|-------|------------|---------|
+| `Baja` | < 200 | Low plate discipline — aggressive, high whiff/K rates |
+| `Media` | 200 – 800 | Average discipline — typical major league profile |
+| `Alta` | > 800 | High plate discipline — selective, low whiff/K rates |
+
+<Tip>
+  The positive weights on `bb_percent` and `takes` reward batters who work counts and lay off bad pitches. The negative weights on `k_percent`, `swing_miss_percent`, `whiffs`, and `swings` penalize free-swingers and batters who chase out of the zone. The `pa` term adds a mild volume bonus, so that batters with more tracked opportunities score slightly higher when all else is equal.
+</Tip>
+
+---
+
+## Train/Test Split
+
+All three models use an **80/20 train/test split** with `random_state=42` for reproducibility. The Elite and Discipline models also use **stratification** to preserve the class distribution in both splits, which is critical given the class imbalance in `elite_hitter` and the uneven bin sizes in `clase_disciplina_home`.
+
+```python
+from sklearn.model_selection import train_test_split
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42, stratify=y
+)
+```
+
+<Note>
+  The Performance model's original notebook implementation uses the same split parameters but without explicit `stratify=y`, since the three-class wOBA quantile split already produces a balanced distribution. The Elite and Discipline models explicitly pass `stratify=y` to ensure the minority class is proportionally represented in the test set.
+</Note>
+
+---
+
+## Class Distribution
+
+Understanding the class balance in each target variable is critical before training, as imbalanced classes can cause a classifier to ignore the minority class entirely.
+
+### Performance Labels (balanced by construction)
+
+```
+Rendimiento_labels
+Bajo      ~286
+Medio     ~286
+Alto      ~285
+```
+
+Three roughly equal groups, produced automatically by `pd.qcut`.
+
+### Elite Hitter (imbalanced)
+
+```
+elite_hitter
+0    684    (non-elite — ~80%)
+1    173    (elite     — ~20%)
+```
+
+With only 173 elite batters against 684 non-elite, the classifier would default to predicting "non-elite" for nearly every batter without corrective action. This is addressed by training the Random Forest with `class_weight='balanced'`:
+
+```python
+from sklearn.ensemble import RandomForestClassifier
+
+rf_elite = RandomForestClassifier(
+    n_estimators=300,
+    max_depth=8,
+    class_weight="balanced",
+    random_state=42
+)
+rf_elite.fit(X_train, y_train)
+```
+
+The `balanced` setting automatically adjusts sample weights so that the minority class (elite hitters) receives proportionally more influence during tree construction, compensating for the 4:1 ratio.
+
+### Plate Discipline Classes (highly skewed)
+
+```
+clase_disciplina_home
+Baja      465    (~54%)
+Media     361    (~42%)
+Alta       31    ( ~4%)
+```
+
+<Warning>
+  The `Alta` discipline class contains only **31 batters** out of 857 — under 4% of the dataset. This extreme skew means the discipline classifier faces the most challenging class imbalance of the three models. Using `class_weight='balanced'` and evaluating with macro-averaged precision/recall (rather than accuracy alone) is essential to get a meaningful picture of model performance on the Alta class.
+</Warning>

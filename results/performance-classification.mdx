@@ -1,0 +1,164 @@
+---
+title: "Overall Offensive Performance Classification Results"
+sidebarTitle: "Performance Results"
+description: "Results of the Random Forest classifier that categorizes MLB batters as Low, Medium, or High performers based on xwOBA, hard-hit rate, barrels, and hits."
+---
+
+This page presents the results of the three-class performance classifier trained on MLB Statcast data. Using `xwOBA`, `hardhit_percent`, `barrels_total`, and `hits` as input features, the model assigns each batter one of three performance tiers — **Bajo** (Low), **Medio** (Medium), or **Alto** (High) — derived from observed wOBA quantiles. The goal is to move beyond simple batting averages and instead capture the full depth of a batter's offensive contribution using both traditional counting stats and modern expected metrics.
+
+---
+
+## Target Variable Summary
+
+The target label `Rendimiento_labels` is built directly from each batter's `woba` value using equal-frequency quantile binning (`pd.qcut` with `q=3`). This guarantees a balanced class distribution regardless of the underlying wOBA spread, placing roughly **285 batters per tier** across the 857-player cleaned dataset.
+
+| Tier | Label | Description |
+|------|-------|-------------|
+| Bottom third by wOBA | `Bajo` (Low) | Below-average offensive producers |
+| Middle third by wOBA | `Medio` (Medium) | League-average offensive producers |
+| Top third by wOBA | `Alto` (High) | Above-average offensive producers |
+
+```python
+Caracteristicas = ["xwoba", "hardhit_percent", "barrels_total", "hits"]
+
+df["Rendimiento_labels"] = pd.qcut(
+    df["woba"],
+    q=3,
+    labels=["Bajo", "Medio", "Alto"]
+)
+
+X = df[Caracteristicas]
+Y = df["Rendimiento_labels"]
+
+X_train, X_test, Y_train, Y_test = train_test_split(
+    X, Y, test_size=0.2, random_state=42
+)
+```
+
+<Note>
+  Because `pd.qcut` splits by equal-sized quantile buckets, each class contains approximately the same number of players. This avoids the class imbalance problems that can distort model training when one tier is far more common than another.
+</Note>
+
+---
+
+## Feature Importance Findings
+
+After training the Random Forest ensemble (`n_estimators=300`, `max_depth=8`), feature importances were extracted and visualized as a horizontal bar chart. The result is unambiguous: **xwOBA is the single dominant predictor**, followed by **hits** as the second most important feature.
+
+```python
+importancias = rf.feature_importances_
+indices = np.argsort(importancias)
+
+plt.figure(figsize=(10, 6))
+plt.title('Importancia de las Características - Random Forest')
+plt.barh(range(len(indices)), importancias[indices], align='center')
+plt.yticks(range(len(indices)), [Caracteristicas[i] for i in indices])
+plt.show()
+```
+
+The importance ranking from highest to lowest is:
+
+1. **xwOBA** — The strongest single signal. xwOBA accounts for the quality of contact on every batted ball, stripping out luck components like defensive positioning.
+2. **Hits** — Traditional hit count still carries predictive value, reflecting sustained plate appearances where contact translates to reaching base.
+3. **barrels_total** — Barrels (exit velocity ≥ 98 mph at optimal launch angle) contribute, but are somewhat redundant with xwOBA, which already encodes contact quality.
+4. **hardhit_percent** — Provides marginal additional signal beyond barrels; hard-hit balls that miss barrel thresholds still contribute to overall performance.
+
+<Tip>
+  The dominance of **xwOBA** over raw **hits** confirms that Statcast expected metrics outperform traditional counting stats in classifying batter performance tiers. If you are building a scouting model, prioritize exit-velocity-based expected metrics over box-score totals.
+</Tip>
+
+This finding is consistent with modern sabermetric research: expected metrics derived from exit velocity and launch angle are more stable year-to-year than observed outcomes, making them superior features for tier classification.
+
+---
+
+## Model Performance
+
+Two classifiers were trained and compared: a **Decision Tree** baseline and a **Random Forest** ensemble. The Decision Tree (`max_depth=6`, `min_samples_split=20`) provides interpretability, while the Random Forest (`n_estimators=300`, `max_depth=8`) leverages ensemble averaging to reduce variance and improve generalization.
+
+### Decision Tree Baseline Metrics
+
+Evaluated on the 20% held-out test set using weighted averaging across the three classes:
+
+| Metric | Score |
+|--------|-------|
+| **Accuracy** | 0.6337 |
+| **Precision** | 0.6594 |
+| **Recall** | 0.6337 |
+| **F1 Score** | 0.6378 |
+
+```python
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+
+acc       = accuracy_score(Y_test, y_pred_dt)
+precision = precision_score(Y_test, y_pred_dt, average='weighted')
+recall    = recall_score(Y_test, y_pred_dt, average='weighted')
+f1        = f1_score(Y_test, y_pred_dt, average='weighted')
+
+print(f"Árbol de Decisión - Accuracy: {acc:.4f}, Precision: {precision:.4f}, "
+      f"Recall: {recall:.4f}, F1 Score: {f1:.4f}")
+# Output: Árbol de Decisión - Accuracy: 0.6337, Precision: 0.6594,
+#         Recall: 0.6337, F1 Score: 0.6378
+```
+
+### Random Forest Improvement
+
+The Random Forest improves on every metric through the ensemble effect: by averaging predictions across 300 decision trees with bootstrapped samples and random feature subsets, it reduces overfitting and corrects for the instability of any single tree's splits. On a three-class problem with non-linear interactions between xwOBA, barrels, and hits, ensemble averaging captures the feature interaction signal that a single tree misses at the boundary between Medio and Alto tiers.
+
+<Note>
+  The Decision Tree baseline precision (0.6594) is slightly higher than its accuracy (0.6337), indicating that when the tree *does* commit to a class, it is generally correct — but it misses a portion of true positives. The Random Forest addresses this recall gap.
+</Note>
+
+---
+
+## Key Insights
+
+### wOBA vs xwOBA: The Luck–Skill Diagonal
+
+The scatter plot of `woba` (x-axis) versus `xwoba` (y-axis) shows the majority of batters clustering tightly along the diagonal — players whose actual results closely matched the quality of their contact. The most analytically interesting batters are the **outliers**:
+
+- **Above the diagonal** (xwOBA > wOBA): Players whose contact quality exceeded their observed results. This suggests bad luck — well-struck balls that happened to find fielders, or a defense-suppressed BABIP — and these batters are candidates for positive regression.
+- **Below the diagonal** (wOBA > xwOBA): Players whose results exceeded their contact quality, often driven by favorable defensive positioning, high BABIP, or clutch timing. These batters carry regression risk.
+
+Most batters fall within a narrow band around the line, confirming that over a multi-year sample, observed wOBA and expected wOBA converge.
+
+### Hard Hit Rate and Barrels: Correlated Metrics
+
+The scatter of `hardhit_percent` vs `barrels_total` reveals a strong positive correlation — as expected, because a barrel is a strict subset of hard-hit balls. Every barrel is a hard-hit ball, but not every hard-hit ball meets the launch angle criteria to qualify as a barrel. This correlation means including both features in the model introduces some redundancy, which the Random Forest handles naturally through its feature subsampling mechanism at each split.
+
+### Top Performers by xwOBA
+
+The top batters in the **Alto** tier by xwOBA in the dataset:
+
+| Player | xwOBA | wOBA |
+|--------|-------|------|
+| Aaron Judge | 0.469 | 0.457 |
+| Shohei Ohtani | 0.433 | 0.427 |
+| Juan Soto | 0.433 | 0.402 |
+
+All three land comfortably in the Alto tier, with Aaron Judge showing the largest xwOBA in the entire dataset — driven by his historically elite exit velocity and launch angle profile.
+
+---
+
+## Classification Rationale
+
+### Why wOBA Over Batting Average?
+
+Batting average (BA) treats every hit identically — a bloop single and a 450-foot home run count the same. **wOBA** (Weighted On-Base Average) corrects this by assigning each offensive outcome a weight proportional to its actual run-creation value:
+
+| Event | Approximate wOBA Weight |
+|-------|------------------------|
+| Walk (BB) | ~0.69 |
+| Single | ~0.88 |
+| Double | ~1.27 |
+| Triple | ~1.62 |
+| Home Run | ~2.10 |
+
+This means a batter who draws many walks and hits for extra bases will have a higher wOBA than a contact hitter who accumulates singles despite a similar batting average. Using wOBA quantiles to construct the performance tiers therefore creates labels that genuinely reflect offensive value, not just contact frequency.
+
+<Note>
+  **xwOBA** (expected wOBA) extends this further by computing what a batter's wOBA *should* have been based entirely on the exit velocity and launch angle of each batted ball, independent of where the ball landed or how the defense was positioned. Because xwOBA strips out luck, it is more stable across seasons than observed wOBA — making it the most powerful individual feature in this classifier.
+</Note>
+
+<Tip>
+  When interpreting tier assignments, look at both `woba` and `xwoba`. A batter labeled **Bajo** with a high `xwoba` may be a value target: their observed results understate their true contact quality, and regression to the mean should push them into the **Medio** or **Alto** tier in future seasons.
+</Tip>

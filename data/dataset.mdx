@@ -1,0 +1,352 @@
+---
+title: "MLB Statcast Batter Dataset: 76 Features Across 911 Players"
+sidebarTitle: "Dataset"
+description: "A detailed look at the MLB Statcast dataset used in the project — 76 batting metrics for 911 players from the 2023-2025 regular seasons, sourced from Baseball Savant."
+---
+
+This dataset forms the foundation of the MLB Performance Analytics project. It captures **911 MLB batters** across **76 Statcast features**, aggregated over the 2023, 2024, and 2025 regular seasons. Each row represents one player's cumulative performance profile, blending traditional counting stats with modern Statcast-derived metrics such as expected weighted on-base average (xwOBA), exit velocity, barrel rates, and granular swing mechanics. The breadth of features makes it well-suited for multi-dimensional classification of batter performance using Random Forest models.
+
+---
+
+## Source
+
+The data was retrieved from [Baseball Savant Statcast Search](https://baseballsavant.mlb.com/statcast_search) — the official MLB platform for granular pitch-by-pitch data. The search was configured to pull **regular season data for the 2023, 2024, and 2025 seasons**, grouped by **batter name** (`group_by=name`) so that each row aggregates all plate appearances for a given player across those seasons.
+
+<Tip>
+  The full Statcast search URL used to export the data is available in the project notebook under **Origen del dataset**. It includes filters for regular season games (`hfGT=R`) and covers all three seasons via `hfSea=2025|2024|2023`.
+</Tip>
+
+---
+
+## Dataset Shape
+
+The raw CSV contains **911 rows** (one per batter) and **76 columns** (features). After dropping all rows with any missing values, the working dataset is reduced to **857 rows**.
+
+```python
+import pandas as pd
+
+ruta = "Data/MLBDATA.csv"
+df = pd.read_csv(ruta)
+
+print(df.shape)
+# (911, 76)
+```
+
+The output of `df.info()` confirms the column types and null counts across all 76 features:
+
+```
+<class 'pandas.core.frame.DataFrame'>
+RangeIndex: 911 entries, 0 to 910
+Data columns (total 76 columns):
+ #   Column                                    Non-Null Count  Dtype
+---  ------                                    --------------  -----
+ 0   pitches                                   911 non-null    int64
+ 1   player_id                                 911 non-null    int64
+ 2   player_name                               911 non-null    object
+ 3   total_pitches                             911 non-null    int64
+ 4   pitch_percent                             911 non-null    float64
+ 5   ba                                        911 non-null    float64
+ 6   iso                                       911 non-null    float64
+ 7   babip                                     898 non-null    float64
+ 8   slg                                       911 non-null    float64
+ 9   woba                                      911 non-null    float64
+10   xwoba                                     911 non-null    float64
+11   xba                                       898 non-null    float64
+12   hits                                      911 non-null    int64
+13   abs                                       911 non-null    int64
+14   launch_speed                              898 non-null    float64
+15   launch_angle                              898 non-null    float64
+16   spin_rate                                 911 non-null    int64
+17   velocity                                  911 non-null    float64
+18   effective_speed                           911 non-null    float64
+19   whiffs                                    911 non-null    int64
+20   swings                                    911 non-null    int64
+21   takes                                     911 non-null    int64
+22   eff_min_vel                               911 non-null    float64
+23   release_extension                         911 non-null    float64
+24   pos3_int_start_distance                   911 non-null    int64
+25   pos4_int_start_distance                   911 non-null    int64
+26   pos5_int_start_distance                   911 non-null    int64
+27   pos6_int_start_distance                   911 non-null    int64
+28   pos7_int_start_distance                   911 non-null    int64
+29   pos8_int_start_distance                   911 non-null    int64
+30   pos9_int_start_distance                   911 non-null    int64
+31   pitcher_run_exp                           911 non-null    float64
+32   run_exp                                   911 non-null    float64
+33   bat_speed                                 865 non-null    float64
+34   swing_length                              865 non-null    float64
+35   pa                                        911 non-null    int64
+36   bip                                       911 non-null    int64
+37   singles                                   911 non-null    int64
+38   doubles                                   911 non-null    int64
+39   triples                                   911 non-null    int64
+40   hrs                                       911 non-null    int64
+41   so                                        911 non-null    int64
+42   k_percent                                 911 non-null    float64
+43   bb                                        911 non-null    int64
+44   bb_percent                                911 non-null    float64
+45   api_break_z_with_gravity                  911 non-null    float64
+46   api_break_z_induced                       911 non-null    float64
+47   api_break_x_arm                           911 non-null    float64
+48   api_break_x_batter_in                     911 non-null    float64
+49   hyper_speed                               906 non-null    float64
+50   bbdist                                    906 non-null    float64
+51   hardhit_percent                           898 non-null    float64
+52   barrels_per_bbe_percent                   898 non-null    float64
+53   barrels_per_pa_percent                    898 non-null    float64
+54   release_pos_z                             911 non-null    float64
+55   release_pos_x                             911 non-null    float64
+56   plate_x                                   911 non-null    float64
+57   plate_z                                   911 non-null    float64
+58   obp                                       911 non-null    float64
+59   barrels_total                             898 non-null    float64
+60   batter_run_value_per_100                  911 non-null    float64
+61   xobp                                      899 non-null    float64
+62   xslg                                      898 non-null    float64
+63   pitcher_run_value_per_100                 911 non-null    float64
+64   xbadiff                                   898 non-null    float64
+65   xobpdiff                                  899 non-null    float64
+66   xslgdiff                                  898 non-null    float64
+67   wobadiff                                  911 non-null    float64
+68   swing_miss_percent                        908 non-null    float64
+69   arm_angle                                 911 non-null    float64
+70   attack_angle                              865 non-null    float64
+71   attack_direction                          865 non-null    float64
+72   swing_path_tilt                           865 non-null    float64
+73   rate_ideal_attack_angle                   865 non-null    float64
+74   intercept_ball_minus_batter_pos_x_inches  865 non-null    float64
+75   intercept_ball_minus_batter_pos_y_inches  865 non-null    float64
+dtypes: float64(51), int64(24), object(1)
+memory usage: 541.0+ KB
+```
+
+<Note>
+  The dataset is composed of 51 `float64` columns, 24 `int64` columns, and 1 `object` column (`player_name`). The majority of numeric columns are complete across all 911 rows; missing values are concentrated in Statcast-era batting mechanics metrics.
+</Note>
+
+---
+
+## Feature Categories
+
+The 76 columns span seven distinct categories of baseball metrics. Expand each accordion below to see the full list and a brief description.
+
+<AccordionGroup>
+  <Accordion title="Player Identification">
+    These two columns uniquely identify each batter in the dataset. They are excluded from model training features but are used for filtering, display, and EDA.
+
+    | Column | Description |
+    |--------|-------------|
+    | `player_id` | Unique MLB/Statcast numeric identifier for the batter |
+    | `player_name` | Player's full name in Last, First format (e.g., `Judge, Aaron`) |
+  </Accordion>
+
+  <Accordion title="Traditional Batting Stats">
+    Classic counting and rate stats that have been core to baseball analysis for over a century. These form the baseline layer of each batter's profile.
+
+    | Column | Description |
+    |--------|-------------|
+    | `ba` | Batting average (H / AB) |
+    | `iso` | Isolated power (SLG − BA); measures raw extra-base power |
+    | `babip` | Batting average on balls in play; indicator of luck and defense |
+    | `slg` | Slugging percentage (total bases / AB) |
+    | `obp` | On-base percentage |
+    | `hits` | Total hits across the aggregated seasons |
+    | `abs` | Total at-bats |
+    | `singles` | Total singles |
+    | `doubles` | Total doubles |
+    | `triples` | Total triples |
+    | `hrs` | Total home runs |
+    | `so` | Total strikeouts |
+    | `bb` | Total walks (bases on balls) |
+    | `k_percent` | Strikeout rate as a percentage of plate appearances |
+    | `bb_percent` | Walk rate as a percentage of plate appearances |
+    | `pa` | Total plate appearances |
+    | `bip` | Balls put in play |
+  </Accordion>
+
+  <Accordion title="Advanced Weighted Metrics">
+    Statcast-derived expected and weighted metrics that capture the true offensive value of a batter, adjusting for luck, defense, and park factors.
+
+    | Column | Description |
+    |--------|-------------|
+    | `woba` | Weighted on-base average; single-number offensive value metric |
+    | `xwoba` | Expected wOBA based on contact quality (exit velocity + launch angle) |
+    | `xba` | Expected batting average |
+    | `xobp` | Expected on-base percentage |
+    | `xslg` | Expected slugging percentage |
+    | `wobadiff` | Difference between actual wOBA and xwOBA (luck/defense signal) |
+    | `xbadiff` | Difference between actual BA and xBA |
+    | `xobpdiff` | Difference between actual OBP and xOBP |
+    | `xslgdiff` | Difference between actual SLG and xSLG |
+    | `batter_run_value_per_100` | Run value generated by the batter per 100 pitches |
+    | `pitcher_run_value_per_100` | Run value against the pitchers faced per 100 pitches |
+    | `barrels_total` | Total number of barreled balls (optimal exit velocity + angle) |
+    | `barrels_per_bbe_percent` | Barrel rate per batted ball event (%) |
+    | `barrels_per_pa_percent` | Barrel rate per plate appearance (%) |
+  </Accordion>
+
+  <Accordion title="Contact Quality / Exit Velocity">
+    Statcast measurements of how hard and at what angle the batter makes contact — the physical output of each swing that makes contact.
+
+    | Column | Description |
+    |--------|-------------|
+    | `launch_speed` | Average exit velocity (mph) on batted balls |
+    | `launch_angle` | Average launch angle (degrees) on batted balls |
+    | `hardhit_percent` | Percentage of batted balls hit at 95+ mph exit velocity |
+    | `hyper_speed` | Extreme exit velocity metric for the hardest-hit balls |
+    | `bbdist` | Average batted ball distance (feet) |
+    | `bat_speed` | Average bat speed at contact (mph) |
+    | `swing_length` | Average path length of the bat through the swing zone (feet) |
+  </Accordion>
+
+  <Accordion title="Pitch Tracking">
+    Metrics describing the characteristics of pitches seen by each batter — velocity, movement, spin, and release point data aggregated across all pitches faced.
+
+    | Column | Description |
+    |--------|-------------|
+    | `pitches` | Total pitches seen |
+    | `total_pitches` | Total pitches in the broader query window |
+    | `pitch_percent` | Percentage of total pitches tracked with full Statcast data |
+    | `velocity` | Average pitch velocity faced (mph) |
+    | `effective_speed` | Average perceived velocity (adjusted for extension) |
+    | `spin_rate` | Average spin rate of pitches faced (RPM) |
+    | `eff_min_vel` | Effective velocity differential from minimum pitch velocity |
+    | `release_extension` | Average pitcher extension toward home plate (feet) |
+    | `release_pos_z` | Average vertical release position of pitches faced (feet) |
+    | `release_pos_x` | Average horizontal release position of pitches faced (feet) |
+    | `api_break_z_with_gravity` | Total vertical break including gravity (inches) |
+    | `api_break_z_induced` | Vertical break induced by spin only (inches) |
+    | `api_break_x_arm` | Horizontal break from arm side (inches) |
+    | `api_break_x_batter_in` | Horizontal break toward batter (inches) |
+  </Accordion>
+
+  <Accordion title="Plate Tracking / Swing Mechanics">
+    Where the pitch crosses the plate and how the batter responds — covering swing decisions, miss rates, and fine-grained biomechanical swing path measurements.
+
+    | Column | Description |
+    |--------|-------------|
+    | `plate_x` | Average horizontal pitch location at plate crossing (feet from center) |
+    | `plate_z` | Average vertical pitch location at plate crossing (feet from ground) |
+    | `swings` | Total swings taken |
+    | `whiffs` | Total swings and misses |
+    | `takes` | Total pitches taken (not swung at) |
+    | `swing_miss_percent` | Whiff rate: whiffs / swings (%) |
+    | `attack_angle` | Average upward angle of the bat through the hitting zone (degrees) |
+    | `attack_direction` | Lateral direction of the swing path (degrees) |
+    | `swing_path_tilt` | Tilt of the overall swing plane (degrees) |
+    | `rate_ideal_attack_angle` | Proportion of swings with an optimal attack angle |
+    | `arm_angle` | Average arm angle of pitchers faced (degrees) |
+    | `intercept_ball_minus_batter_pos_x_inches` | Horizontal offset between ball path and batter position at contact (inches) |
+    | `intercept_ball_minus_batter_pos_y_inches` | Vertical offset between ball path and batter position at contact (inches) |
+    | `run_exp` | Run expectancy added by the batter's plate appearances |
+    | `pitcher_run_exp` | Run expectancy from the pitcher's perspective |
+  </Accordion>
+
+  <Accordion title="Fielder Positioning">
+    Starting distances (in feet) of each fielder (positions 3–9) at the moment the pitch was delivered, averaged across all tracked plate appearances. These reflect the defensive alignments batter typically face.
+
+    | Column | Description |
+    |--------|-------------|
+    | `pos3_int_start_distance` | First baseman starting distance (feet) |
+    | `pos4_int_start_distance` | Second baseman starting distance (feet) |
+    | `pos5_int_start_distance` | Third baseman starting distance (feet) |
+    | `pos6_int_start_distance` | Shortstop starting distance (feet) |
+    | `pos7_int_start_distance` | Left fielder starting distance (feet) |
+    | `pos8_int_start_distance` | Center fielder starting distance (feet) |
+    | `pos9_int_start_distance` | Right fielder starting distance (feet) |
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Missing Values
+
+Of the 911 raw rows, **54 rows were dropped** to produce the clean 857-row working dataset. The null values are concentrated in Statcast biomechanics fields that require a minimum sample threshold to compute reliably.
+
+The columns with the most missing values are:
+
+| Column | Missing Rows |
+|--------|-------------|
+| `bat_speed` | 46 |
+| `swing_length` | 46 |
+| `attack_angle` | 46 |
+| `attack_direction` | 46 |
+| `swing_path_tilt` | 46 |
+| `rate_ideal_attack_angle` | 46 |
+| `intercept_ball_minus_batter_pos_x_inches` | 46 |
+| `intercept_ball_minus_batter_pos_y_inches` | 46 |
+| `babip` | 13 |
+| `xba` | 13 |
+| `launch_speed` | 13 |
+| `launch_angle` | 13 |
+| `hardhit_percent` | 13 |
+| `barrels_per_bbe_percent` | 13 |
+| `barrels_per_pa_percent` | 13 |
+| `barrels_total` | 13 |
+| `xslg` | 13 |
+| `xbadiff` | 13 |
+| `xslgdiff` | 13 |
+| `xobp` | 12 |
+| `xobpdiff` | 12 |
+| `hyper_speed` | 5 |
+| `bbdist` | 5 |
+| `swing_miss_percent` | 3 |
+
+Null rows are removed in a single operation using pandas `dropna`:
+
+```python
+df.dropna(inplace=True)
+
+print(df.shape)
+# (857, 76)
+```
+
+<Warning>
+  The 46-row overlap in swing mechanics nulls (bat_speed, swing_length, attack_angle, etc.) means most of the dropped rows are missing an entire block of biomechanical measurements. These players typically had very few tracked plate appearances and would not provide reliable signal for the classifiers.
+</Warning>
+
+---
+
+## Sample Records
+
+Loading the dataset and previewing the first few rows is straightforward with pandas:
+
+```python
+import pandas as pd
+
+df = pd.read_csv("Data/MLBDATA.csv")
+df.dropna(inplace=True)
+
+# Preview key columns for the first five batters
+cols_preview = ["player_name", "woba", "xwoba", "hardhit_percent", "barrels_total", "hits"]
+print(df[cols_preview].head())
+```
+
+Example output (first five rows of the clean dataset):
+
+```
+        player_name   woba  xwoba  hardhit_percent  barrels_total  hits
+0       Olson, Matt  0.373  0.366        52.219714          192.0   490
+1   Schwarber, Kyle  0.369  0.383        54.763949          206.0   402
+2        Soto, Juan  0.402  0.433        55.925926          230.0   474
+3  Lindor, Francisco 0.353  0.357        45.344130          162.0   494
+4  Arozarena, Randy  0.333  0.332        47.642680          130.0   406
+```
+
+---
+
+## Top Players by xwOBA
+
+xwOBA (expected weighted on-base average) is the dataset's primary quality-of-contact metric, and it anchors the Performance and Elite classification models. The top five batters by xwOBA in the dataset represent some of the most dominant hitters in the sport across the 2023–2025 seasons:
+
+| Player | xwOBA |
+|--------|-------|
+| Aaron Judge | 0.469 |
+| Shohei Ohtani | 0.433 |
+| Juan Soto | 0.433 |
+| Ronald Acuña Jr. | 0.424 |
+| Yordan Alvarez | 0.419 |
+
+<Note>
+  Aaron Judge's xwOBA of **0.469** is the highest in the dataset among players with a substantial sample size (457 hits over the aggregated seasons). A handful of players at the very top of the xwOBA leaderboard — such as Jeter Downs (0.523) and Zack Collins (0.519) — have extremely small sample sizes (1–2 hits), making their figures statistically unreliable. The classifier models are applied to the full 857-batter post-clean dataset, so sample-size effects are handled implicitly through the wOBA quantile splits used for labeling.
+</Note>

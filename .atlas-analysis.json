@@ -1,0 +1,67 @@
+{
+  "projectType": "ai-ml",
+  "projectName": "MLB Performance Analytics",
+  "projectDescription": "A machine learning project that uses Random Forest classifiers and MLB Statcast data to classify batter performance across three dimensions: overall offensive performance, elite status, and plate discipline.",
+  "theme": "palm",
+  "primaryColor": "#C8102E",
+  "lightColor": "#E8D5B7",
+  "darkColor": "#002D62",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "introduction",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Data",
+            "pages": [
+              "data/dataset",
+              "data/feature-engineering"
+            ]
+          },
+          {
+            "group": "Analysis & Models",
+            "pages": [
+              "models/target-variables",
+              "models/random-forest",
+              "models/evaluation"
+            ]
+          },
+          {
+            "group": "Results",
+            "pages": [
+              "results/performance-classification",
+              "results/elite-classification",
+              "results/plate-discipline"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Three target variable classification: overall performance (Low/Medium/High), elite status (Elite vs Non-Elite), and plate discipline",
+    "Random Forest classifiers trained on 76 Statcast features covering 911 MLB batters (2023-2025)",
+    "Feature importance analysis identifying the most predictive batting metrics (xwOBA, hits, barrels)",
+    "Integration of traditional stats (BA, HR) with advanced Statcast metrics (launch speed, bat speed, barrel rate)",
+    "Exploratory data analysis and visualization comparing wOBA vs xwOBA, hard hit rates, and plate discipline patterns",
+    "Model evaluation with accuracy, precision, recall, and F1 score metrics",
+    "Data from MLB Statcast covering 2023-2025 regular season at-bats"
+  ],
+  "publicApiSurface": [
+    "RandomForestClassifier(n_estimators=300, max_depth=8, random_state=42) — performance classification model",
+    "RandomForestClassifier(n_estimators=300, max_depth=8, class_weight='balanced', random_state=42) — elite classification model",
+    "Target variable: Rendimiento_labels (Bajo/Medio/Alto) — overall offensive performance",
+    "Target variable: elite_hitter (0/1) — elite batter classification (top 20% wOBA)",
+    "Target variable: plate_discipline — strike zone decision quality",
+    "Features for performance model: xwoba, hardhit_percent, barrels_total, hits",
+    "Features for elite model: xwoba, hardhit_percent, barrels_total, slg, xslg",
+    "Data source: MLB Statcast (baseballsavant.mlb.com), 2023-2025 regular season, 911 batters, 76 features"
+  ]
+}

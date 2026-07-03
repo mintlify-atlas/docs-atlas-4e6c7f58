@@ -1,0 +1,237 @@
+---
+title: "Random Forest Classifier Architecture and Training Setup"
+sidebarTitle: "Random Forest"
+description: "Details of the Random Forest classifiers used for each of the three MLB batter classification tasks — hyperparameters, training procedure, and model configuration."
+---
+
+Three separate Random Forest classifiers are trained in this project, one for each target variable: overall performance (`Rendimiento_labels`), elite status (`elite_hitter`), and plate discipline (`clase_disciplina_home`). Random forests are an ensemble of decision trees that reduce overfitting through **bagging** (training each tree on a random bootstrap sample of the data) and **random feature selection** (evaluating only a random subset of features at each split). The result is a model that generalizes substantially better than any single decision tree.
+
+---
+
+## Why Random Forest?
+
+Using a Random Forest over a standalone decision tree offers several concrete advantages for this dataset:
+
+- **Variance reduction via ensemble averaging** — predictions are averaged across 300 trees, smoothing out the idiosyncratic errors of any individual tree.
+- **Handles mixed numeric features** — all Statcast inputs (percentages, counts, rate stats) are numeric and require no special encoding for tree-based models.
+- **Built-in feature importance** — `rf.feature_importances_` provides a normalized importance score per feature after training, directly interpretable for baseball analysis.
+- **Robust to outliers** — tree splits are based on rank ordering rather than raw values, so extreme outliers in metrics like `barrels_total` or `whiffs` do not distort the model.
+
+<Note>
+  A `DecisionTreeClassifier` was trained first as a baseline for the performance model. This provides a concrete reference point: any Random Forest result that exceeds the Decision Tree's metrics represents a measurable gain from the ensemble approach.
+</Note>
+
+---
+
+## Model Configurations
+
+<Tabs>
+  <Tab title="Performance Model">
+    ## Model 1 — Overall Performance Classifier
+
+    **Target:** `Rendimiento_labels` (Bajo / Medio / Alto)
+
+    This model classifies batters into three tiers of general offensive production using four core Statcast metrics that capture expected quality of contact, hard-hit rate, barrel power, and hit count.
+
+    ```python
+    from sklearn.ensemble import RandomForestClassifier
+    from sklearn.model_selection import train_test_split
+
+    # Features and target
+    Caracteristicas = ["xwoba", "hardhit_percent", "barrels_total", "hits"]
+    X = df[Caracteristicas]
+    y = df["Rendimiento_labels"]
+
+    # Train/test split — 80% training, 20% held-out test
+    X_train, X_test, Y_train, Y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42
+    )
+
+    # Train model
+    rf = RandomForestClassifier(n_estimators=300, max_depth=8, random_state=42)
+    rf.fit(X_train, Y_train)
+    ```
+
+    ### Feature Set
+
+    | Feature | Description |
+    |---------|-------------|
+    | `xwoba` | Expected wOBA — quality-of-contact adjusted offensive value |
+    | `hardhit_percent` | Percentage of batted balls hit at 95+ mph exit velocity |
+    | `barrels_total` | Count of batted-ball events in the optimal launch angle/EV zone |
+    | `hits` | Total hit count for the season |
+
+    ### Feature Importance Finding
+
+    After training, feature importance analysis shows that **xwOBA and hits** are the strongest predictors of overall performance tier — expected contact quality and actual hit production together capture most of the signal.
+  </Tab>
+
+  <Tab title="Elite Model">
+    ## Model 2 — Elite Status Classifier
+
+    **Target:** `elite_hitter` (0 = non-elite, 1 = elite)
+
+    This binary classifier identifies whether a batter belongs in the top 20% of wOBA performers. Because the dataset contains only 173 elite batters versus 684 non-elite (a ~4:1 imbalance), two adjustments are made: **stratified splitting** and **balanced class weighting**.
+
+    ```python
+    from sklearn.ensemble import RandomForestClassifier
+    from sklearn.model_selection import train_test_split
+
+    # Features and target
+    features_elite = ["xwoba", "hardhit_percent", "barrels_total", "slg", "xslg"]
+    X = df[features_elite]
+    y = df["elite_hitter"]
+
+    # Train/test split with stratification (preserves 4:1 class ratio in both sets)
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y
+    )
+
+    # Train with class balancing
+    rf_elite = RandomForestClassifier(
+        n_estimators=300,
+        max_depth=8,
+        class_weight="balanced",
+        random_state=42
+    )
+    rf_elite.fit(X_train, y_train)
+    ```
+
+    ### Feature Set
+
+    | Feature | Description |
+    |---------|-------------|
+    | `xwoba` | Expected wOBA — primary contact quality measure |
+    | `hardhit_percent` | Hard-hit rate — raw power signal |
+    | `barrels_total` | Barrel count — peak-contact event frequency |
+    | `slg` | Slugging percentage — traditional power metric |
+    | `xslg` | Expected slugging — contact-adjusted power output |
+
+    ### Feature Importance Finding
+
+    **xwOBA and barrels_total** dominate importance scores for this model. This confirms that elite batters are distinguished primarily by their expected contact quality and how frequently they achieve optimal barrel events — not simply by counting stats.
+
+    <Warning>
+      Without `class_weight='balanced'`, the model would be biased toward predicting "non-elite" for nearly every batter, achieving high accuracy by exploiting the majority class while missing most actual elite players. Always verify recall for the minority class when evaluating this model.
+    </Warning>
+  </Tab>
+
+  <Tab title="Plate Discipline Model">
+    ## Model 3 — Plate Discipline Classifier
+
+    **Target:** `clase_disciplina_home` (Baja / Media / Alta)
+
+    This model classifies batters by the quality of their plate decision-making. The features are drawn entirely from swing behavior and discipline metrics — no power or hit-result stats are included. This isolates the process dimension of hitting.
+
+    ```python
+    from sklearn.ensemble import RandomForestClassifier
+    from sklearn.model_selection import train_test_split
+
+    # Discipline-related features only
+    features_disc = [
+        "bb_percent",
+        "k_percent",
+        "swing_miss_percent",
+        "swings",
+        "whiffs",
+        "takes",
+        "pa"
+    ]
+    X = df[features_disc]
+    y = df["clase_disciplina_home"]
+
+    # Drop any rows with NaN in X or y before splitting
+    data = pd.concat([X, y], axis=1).dropna()
+    X = data[features_disc]
+    y = data["clase_disciplina_home"]
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y
+    )
+
+    rf_disc = RandomForestClassifier(
+        n_estimators=300,
+        max_depth=8,
+        class_weight="balanced",
+        random_state=42,
+        n_jobs=-1
+    )
+    rf_disc.fit(X_train, y_train)
+    ```
+
+    ### Feature Set
+
+    | Feature | Description |
+    |---------|-------------|
+    | `bb_percent` | Walk rate — measures pitch recognition and patience |
+    | `k_percent` | Strikeout rate — measures vulnerability to missing pitches |
+    | `swing_miss_percent` | Swing-and-miss rate — contact consistency indicator |
+    | `swings` | Total swing count |
+    | `whiffs` | Total swing-and-miss count |
+    | `takes` | Pitches taken without swinging |
+    | `pa` | Plate appearances — overall activity level |
+
+    ### Feature Importance Finding
+
+    **`swing_miss_percent` and `bb_percent`** are the most important predictors for plate discipline classification. Together, they capture the core of the discipline concept: how often a batter makes contact when they swing, and how often they draw walks by recognizing balls.
+  </Tab>
+</Tabs>
+
+---
+
+## Hyperparameter Reference
+
+All three models share a common base configuration. The table below describes each hyperparameter and its purpose:
+
+| Parameter | Value | Purpose |
+|-----------|-------|---------|
+| `n_estimators` | `300` | Number of decision trees in the ensemble. More trees reduce variance and stabilize predictions; 300 provides a good balance between performance and training time. |
+| `max_depth` | `8` | Maximum allowed depth for each individual tree. Limits tree complexity to prevent overfitting on the training set. |
+| `random_state` | `42` | Seed for all random operations (bootstrap sampling, feature selection at each split). Guarantees identical results across runs. |
+| `class_weight` | `'balanced'` | *(Elite and Discipline models only)* Automatically adjusts per-class sample weights inversely proportional to class frequency. Compensates for imbalanced label distributions. |
+| `n_jobs` | `-1` | *(Discipline model only)* Uses all available CPU cores to parallelize tree training. |
+
+<Note>
+  The `max_depth=8` setting is the primary regularization control. Without a depth limit, individual trees would grow until they perfectly memorize the training data, leading to high variance when evaluated on new batters.
+</Note>
+
+---
+
+## Decision Tree Baseline
+
+Before training each Random Forest, a `DecisionTreeClassifier` was used as a single-model baseline for the performance classification task:
+
+```python
+from sklearn.tree import DecisionTreeClassifier
+
+dt = DecisionTreeClassifier(max_depth=6, min_samples_split=20, random_state=42)
+dt.fit(X_train, Y_train)
+
+y_pred_dt = dt.predict(X_test)
+```
+
+The Decision Tree was evaluated with the same metrics as the Random Forest (accuracy, precision, recall, F1). Its results serve as the lower-bound benchmark — any Random Forest score above these figures represents a direct, quantifiable improvement attributable to the ensemble approach. See the [Evaluation](/models/evaluation) page for the full baseline numbers.
+
+---
+
+## Feature Importance
+
+After training, each model's `feature_importances_` attribute returns a normalized array where all values sum to 1.0. Higher scores indicate stronger predictive contribution:
+
+```python
+import matplotlib.pyplot as plt
+import numpy as np
+
+importancias = rf.feature_importances_
+indices = np.argsort(importancias)
+
+plt.figure(figsize=(10, 6))
+plt.title('Importancia de las Características - Random Forest')
+plt.barh(range(len(indices)), importancias[indices], align='center')
+plt.yticks(range(len(indices)), [Caracteristicas[i] for i in indices])
+plt.show()
+```
+
+<Tip>
+  Feature importances in scikit-learn Random Forests are computed as the mean decrease in impurity (Gini impurity for classification) across all trees and all splits where a feature is used. Features that appear higher in more trees and produce cleaner splits receive higher importance scores.
+</Tip>

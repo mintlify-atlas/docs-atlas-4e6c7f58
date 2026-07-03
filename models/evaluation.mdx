@@ -1,0 +1,180 @@
+---
+title: "Model Evaluation: Accuracy, Precision, Recall, and F1 Score"
+sidebarTitle: "Evaluation"
+description: "How the three Random Forest classifiers are evaluated using accuracy, precision, recall, and F1 score metrics from scikit-learn, with a Decision Tree baseline for comparison."
+---
+
+Each classifier is evaluated on a held-out test set representing 20% of the data — batters the model never saw during training. Four standard classification metrics from scikit-learn are computed for every model: accuracy, precision, recall, and F1 score. A Decision Tree baseline trained on the same features provides a concrete reference point for measuring the improvement that comes from using a Random Forest ensemble.
+
+---
+
+## Evaluation Metrics
+
+Each metric captures a different aspect of model quality. In the context of classifying MLB batters, they can be interpreted as follows:
+
+### Accuracy
+The fraction of all batters in the test set that were correctly classified. A model that correctly identifies 80 out of 100 batters has 80% accuracy.
+
+```
+Accuracy = (Correct Predictions) / (Total Predictions)
+```
+
+Accuracy is intuitive but can be misleading when classes are imbalanced — a model that always predicts "non-elite" would achieve ~80% accuracy on the elite classifier simply by exploiting the majority class.
+
+### Precision
+Of all the batters the model predicted as belonging to class X, what fraction actually belonged to class X? High precision means few false positives — the model is selective and confident when it assigns a label.
+
+```
+Precision = True Positives / (True Positives + False Positives)
+```
+
+In a scouting context: if the model flags 20 batters as "elite," high precision means most of those 20 are genuinely elite.
+
+### Recall
+Of all the batters who actually belong to class X, what fraction did the model successfully identify? High recall means few false negatives — the model catches most of the true members of each class.
+
+```
+Recall = True Positives / (True Positives + False Negatives)
+```
+
+In a scouting context: high recall means the model is unlikely to miss an elite batter who should have been flagged.
+
+### F1 Score
+The harmonic mean of precision and recall. It is particularly valuable when classes are imbalanced, because it penalizes models that sacrifice one metric to inflate the other.
+
+```
+F1 = 2 × (Precision × Recall) / (Precision + Recall)
+```
+
+<Note>
+  All multi-class metrics (precision, recall, F1) are computed with `average='weighted'`, which calculates the metric for each class and averages them weighted by the number of true instances per class. This accounts for class size differences in the three-class models.
+</Note>
+
+---
+
+## Decision Tree Baseline Results
+
+The Decision Tree classifier — trained on the same features and split as the performance Random Forest — produced the following results on the test set:
+
+```
+Decision Tree — Performance Model (Rendimiento_labels):
+  Accuracy:  0.6337
+  Precision: 0.6594
+  Recall:    0.6337
+  F1 Score:  0.6378
+```
+
+These figures establish the floor for acceptable performance. The Random Forest is expected to outperform all four of these values by leveraging ensemble averaging across 300 trees rather than relying on a single tree's splits.
+
+<Note>
+  A Decision Tree baseline accuracy of ~63% on a balanced three-class problem (33% random chance) confirms that the features carry meaningful signal. The question is how much of that signal the Random Forest can unlock through ensemble learning.
+</Note>
+
+---
+
+## Evaluation Code
+
+The same evaluation snippet is applied to all three models. Swap in the appropriate `rf`, `X_test`, and `y_test` variables for each classifier:
+
+```python
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+
+# Generate predictions on the held-out test set
+y_pred = rf.predict(X_test)
+
+# Compute metrics
+acc       = accuracy_score(y_test, y_pred)
+precision = precision_score(y_test, y_pred, average='weighted')
+recall    = recall_score(y_test, y_pred, average='weighted')
+f1        = f1_score(y_test, y_pred, average='weighted')
+
+print(f"Accuracy:  {acc:.4f}")
+print(f"Precision: {precision:.4f}")
+print(f"Recall:    {recall:.4f}")
+print(f"F1 Score:  {f1:.4f}")
+```
+
+### Per-Model Evaluation
+
+For the elite classifier, precision and recall are computed without averaging to inspect the minority class directly:
+
+```python
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+
+y_pred = rf_elite.predict(X_test)
+
+acc  = accuracy_score(y_test, y_pred)
+prec = precision_score(y_test, y_pred)   # binary, no averaging needed
+rec  = recall_score(y_test, y_pred)
+f1   = f1_score(y_test, y_pred)
+
+print(f"Elite vs No Elite - Accuracy:  {acc:.4f}")
+print(f"Precision: {prec:.4f}")
+print(f"Recall:    {rec:.4f}")
+print(f"F1:        {f1:.4f}")
+```
+
+For the plate discipline classifier:
+
+```python
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+
+y_pred = rf_disc.predict(X_test)
+
+acc  = accuracy_score(y_test, y_pred)
+prec = precision_score(y_test, y_pred, average="weighted")
+rec  = recall_score(y_test, y_pred, average="weighted")
+f1   = f1_score(y_test, y_pred, average="weighted")
+
+print(f"RF Disciplina - Accuracy: {acc:.4f}, Precision: {prec:.4f}, Recall: {rec:.4f}, F1: {f1:.4f}")
+```
+
+---
+
+## Random Forest vs Decision Tree
+
+<Note>
+  Random Forest is expected to outperform the Decision Tree baseline across all four metrics. The ensemble mechanism reduces variance by averaging predictions across 300 independently trained trees, each built on a different bootstrap sample with a different random feature subset at each split. Where the single Decision Tree might overfit to specific players in the training data, the Random Forest's averaged vote smooths out those individual errors — producing more reliable predictions on the held-out test batters.
+</Note>
+
+The key tradeoffs between the two approaches:
+
+| Property | Decision Tree | Random Forest |
+|----------|---------------|---------------|
+| Interpretability | High — can be visualized as a flowchart | Lower — 300 trees cannot be read directly |
+| Overfitting risk | High (especially without depth limits) | Low (ensemble averaging reduces variance) |
+| Training time | Fast | Slower (300× the trees) |
+| Feature importance | Available | Available — averaged across all trees |
+| Generalization | Weaker | Stronger |
+
+---
+
+## Feature Importance Visualization
+
+After evaluating model performance, visualizing feature importances confirms which Statcast metrics are driving each classifier's decisions. The `feature_importances_` attribute returns a normalized array (values sum to 1.0):
+
+```python
+import matplotlib.pyplot as plt
+import numpy as np
+
+importancias = rf.feature_importances_
+indices = np.argsort(importancias)
+
+plt.figure(figsize=(10, 6))
+plt.title('Feature Importance — Random Forest')
+plt.barh(range(len(indices)), importancias[indices], align='center')
+plt.yticks(range(len(indices)), [Caracteristicas[i] for i in indices])
+plt.show()
+```
+
+### Key Findings by Model
+
+| Model | Most Important Features |
+|-------|------------------------|
+| Performance (`Rendimiento_labels`) | `xwoba`, `hits` |
+| Elite Status (`elite_hitter`) | `xwoba`, `barrels_total` |
+| Plate Discipline (`clase_disciplina_home`) | `swing_miss_percent`, `bb_percent` |
+
+<Tip>
+  The consistency of `xwoba` as the top feature across both the performance and elite models reinforces a broader principle in modern baseball analytics: expected metrics based on quality of contact are more predictive than raw counting stats. `xwoba` removes the noise introduced by defense, park factors, and batted-ball luck — leaving only the signal from how well the batter actually hit the ball.
+</Tip>

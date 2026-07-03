@@ -1,0 +1,158 @@
+---
+title: "Elite Batter Classification: Identifying the Top 20% by xwOBA"
+sidebarTitle: "Elite Results"
+description: "Results of the binary Random Forest classifier that distinguishes elite MLB batters (top 20% wOBA) from the rest, using xwOBA, barrels, SLG, and hard-hit rate."
+---
+
+The elite batter classifier frames performance identification as a binary problem: a batter is either **elite** (label `1`) or **not elite** (label `0`). Elite status is defined by crossing the 80th percentile wOBA threshold within the 857-batter cleaned dataset, meaning the top 20% of offensive producers by observed wOBA earn the elite designation. Of the 857 batters, **173 qualify as elite** and **684 do not**, creating a meaningful 4:1 class imbalance that requires deliberate handling during model training. The classifier uses `xwoba`, `hardhit_percent`, `barrels_total`, `slg`, and `xslg` as features — metrics that jointly capture contact quality, power production, and on-base value.
+
+---
+
+## Elite Threshold
+
+The binary label is constructed with a single quantile threshold on the `woba` column. Any batter at or above the 80th percentile wOBA is marked elite:
+
+```python
+df["elite_hitter"] = (df["woba"] >= df["woba"].quantile(0.80)).astype(int)
+# Result: 173 elite, 684 non-elite
+
+df["elite_hitter"].value_counts()
+# 0    684
+# 1    173
+```
+
+Selecting the 80th percentile rather than a fixed wOBA cutoff (e.g., 0.360) has an important advantage: it is **dataset-relative**, automatically adjusting to the overall offensive environment of the sample years. If run-scoring league-wide increases or decreases, the elite boundary shifts accordingly, keeping the label meaningful across different eras or sample windows.
+
+<Note>
+  The 80th percentile threshold in this dataset corresponds to approximately **wOBA ≥ 0.360**. Across the 2023–2025 sample, elite batters cluster noticeably above this value, with the top performers approaching 0.420–0.460.
+</Note>
+
+---
+
+## Class Imbalance Handling
+
+With 684 non-elite batters versus 173 elite batters, the dataset has a roughly **4:1 class imbalance**. Without correction, a naive classifier could achieve ~80% accuracy simply by predicting "not elite" for every batter — a useless model that never identifies a single elite player.
+
+The Random Forest is configured with `class_weight='balanced'` to compensate:
+
+```python
+from sklearn.ensemble import RandomForestClassifier
+
+rf_elite = RandomForestClassifier(
+    n_estimators=300,
+    max_depth=8,
+    class_weight="balanced",   # Inversely weight classes by frequency
+    random_state=42
+)
+
+rf_elite.fit(X_train, y_train)
+```
+
+With `class_weight='balanced'`, each tree in the forest assigns a higher misclassification penalty to the minority class (elite batters). This effectively upweights elite samples during training so the model does not learn to ignore them. The train/test split also uses `stratify=y` to preserve the 80/20 elite ratio in both subsets:
+
+```python
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y,
+    test_size=0.2,
+    random_state=42,
+    stratify=y          # Maintains class proportions in each split
+)
+```
+
+<Tip>
+  When evaluating a model trained on imbalanced data, accuracy alone is misleading. Examine **precision** and **recall** separately for the elite class (`label=1`). High recall on the elite class means the model successfully identifies most true elite batters; high precision means the batters it labels elite actually are elite.
+</Tip>
+
+---
+
+## Feature Importance Findings
+
+After training, the feature importances from the Random Forest reveal a clear hierarchy among the five predictors:
+
+```python
+importances = pd.Series(
+    rf_elite.feature_importances_,
+    index=X_train.columns
+).sort_values(ascending=True)
+
+importances.plot(kind="barh")
+plt.title("Características más importantes para predecir Elite vs No Elite")
+plt.show()
+```
+
+The importance ranking from highest to lowest:
+
+1. **xwOBA** — By far the strongest signal. Expected wOBA directly encodes the quality of contact that separates elite batters from the rest at the pitch-by-pitch level.
+2. **barrels_total** — Total barrels strongly distinguish elite batters because a barrel is among the highest-value offensive events in baseball. Elite hitters generate barrels at dramatically higher rates than league-average batters.
+3. **slg** — Slugging percentage captures raw power production and correlates strongly with home run frequency, which is a defining characteristic of elite offensive performance.
+4. **xslg** — Expected slugging provides a contact-quality-adjusted view of power and adds information beyond observed SLG, particularly for batters whose observed SLG diverges from their exit-velocity profile.
+5. **hardhit_percent** — Contributes, but with lower marginal importance than expected. Because barrels (a stricter threshold) are already included and cover much of the same signal, hard-hit percentage adds only incremental value at the margin.
+
+<Note>
+  The relatively lower importance of `hardhit_percent` compared to `barrels_total` illustrates a key principle: **specificity matters more than breadth** when identifying elite batters. A barrel requires both high exit velocity (≥ 98 mph) *and* an optimal launch angle, making it a far more selective — and predictive — quality-of-contact filter than a broad hard-hit threshold.
+</Note>
+
+---
+
+## Key Players — Elite Tier
+
+The following players from the dataset represent the highest xwOBA values in the elite tier, confirming the model's feature importance findings: elite status is tightly linked to elite contact quality metrics.
+
+| Player | xwOBA | wOBA |
+|--------|-------|------|
+| Aaron Judge | 0.469 | 0.457 |
+| Shohei Ohtani | 0.433 | 0.427 |
+| Juan Soto | 0.433 | 0.402 |
+| Ronald Acuña Jr. | 0.424 | 0.403 |
+| Yordan Alvarez | 0.419 | 0.397 |
+| Corey Seager | 0.401 | 0.384 |
+
+Each of these players sits comfortably above the 80th percentile threshold across multiple seasons, confirming that their elite designation is not a one-year anomaly but a reflection of consistently superior contact quality and offensive production.
+
+A few noteworthy observations from this list:
+
+- **Aaron Judge** leads the entire dataset with an xwOBA of 0.469, driven by historically elite exit velocity. His observed wOBA (0.457) closely tracks his expected value, confirming that his production is genuine contact quality — not luck.
+- **Juan Soto** shows a notable gap between xwOBA (0.433) and observed wOBA (0.402), suggesting some observed outcome underperformance relative to contact quality. His xwOBA still firmly cements elite status.
+- **Ronald Acuña Jr.** and **Yordan Alvarez** both post sub-0.420 xwOBA values but still clear the 80th percentile threshold, demonstrating that the elite tier captures a meaningful performance band rather than just the very top handful of players.
+
+---
+
+## wOBA Distribution: Elite vs Non-Elite
+
+The box plot comparing wOBA distributions between the two groups provides the most direct visual validation of the model's classification target:
+
+```python
+sns.boxplot(
+    data=df,
+    x="elite_hitter",
+    y="woba",
+    palette="Set2"
+)
+plt.title("Distribución de wOBA: Jugadores Élite vs No Élite")
+plt.xlabel("Jugador Élite")
+plt.ylabel("wOBA")
+plt.show()
+```
+
+The key visual finding: **elite batters show a clearly right-shifted wOBA distribution** compared to non-elite batters. The median wOBA for elite batters sits well above the maximum of the non-elite interquartile range. The 80th percentile cutoff creates clean separation — there is relatively little overlap between the two distributions, which explains why the Random Forest classifier can achieve strong precision and recall on this binary task despite the class imbalance.
+
+<Tip>
+  The clean distributional separation confirms the validity of the 80th percentile as the elite threshold. If the two distributions heavily overlapped, it would suggest the threshold is too conservative or too aggressive. The right-shifted elite distribution confirms the label captures a genuinely distinct offensive performance tier.
+</Tip>
+
+---
+
+## Why Barrels Matter
+
+A **barrel** is a specific batted-ball outcome defined by Statcast as a ball hit with:
+
+- **Exit velocity ≥ 98 mph**, *and*
+- A **launch angle** within the optimal range for that exit velocity (typically 26°–30° at 98 mph, with the range widening as exit velocity increases)
+
+Balls meeting both thresholds carry an expected batting average above .500 and an expected slugging percentage above 1.500 — making them among the most valuable individual contact events in baseball. A batter who consistently generates barrels is demonstrating elite bat speed, optimal swing plane, and the ability to make hard contact to all fields.
+
+In the context of this model, `barrels_total` accumulates barrel count over the full multi-year sample, so elite batters who play full seasons at high quality naturally accumulate far more barrels than league-average batters. This volume effect, combined with the inherent quality signal in each individual barrel, makes `barrels_total` the second-most important predictor of elite status after `xwOBA`.
+
+<Note>
+  Barrels are sometimes confused with **hard-hit balls** (exit velocity ≥ 95 mph), but the two metrics are distinct. Every barrel is a hard-hit ball, but fewer than half of hard-hit balls qualify as barrels. The launch angle requirement in the barrel definition filters out hard grounders and towering pop-ups, keeping only the most offensively productive contact events.
+</Note>
