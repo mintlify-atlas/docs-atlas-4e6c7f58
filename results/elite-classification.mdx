@@ -1,7 +1,7 @@
 ---
-title: "Elite Batter Classification: Identifying the Top 20% by xwOBA"
+title: "Elite Batter Classification: Top 20% wOBA Identification"
 sidebarTitle: "Elite Results"
-description: "Results of the binary Random Forest classifier that distinguishes elite MLB batters (top 20% wOBA) from the rest, using xwOBA, barrels, SLG, and hard-hit rate."
+description: "Results of the binary Random Forest classifier that identifies elite MLB batters (top 20% wOBA) using xwOBA, barrels, SLG, and hard-hit rate features."
 ---
 
 The elite batter classifier frames performance identification as a binary problem: a batter is either **elite** (label `1`) or **not elite** (label `0`). Elite status is defined by crossing the 80th percentile wOBA threshold within the 857-batter cleaned dataset, meaning the top 20% of offensive producers by observed wOBA earn the elite designation. Of the 857 batters, **173 qualify as elite** and **684 do not**, creating a meaningful 4:1 class imbalance that requires deliberate handling during model training. The classifier uses `xwoba`, `hardhit_percent`, `barrels_total`, `slg`, and `xslg` as features — metrics that jointly capture contact quality, power production, and on-base value.

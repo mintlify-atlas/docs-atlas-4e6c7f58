@@ -1,7 +1,7 @@
 ---
-title: "MLB Performance Analytics: Classifying Batters with Machine Learning"
+title: "MLB Performance Analytics: Classifying Batters by ML"
 sidebarTitle: "Introduction"
-description: "An overview of the MLB Performance Analytics project — how it uses Random Forest classifiers and Statcast data to classify MLB batters across three performance dimensions."
+description: "How MLB Performance Analytics uses Random Forest classifiers on Statcast data to classify 911 MLB batters across three offensive performance dimensions."
 ---
 
 MLB Performance Analytics applies Random Forest machine learning classifiers to MLB Statcast data to systematically classify 911 professional batters across three distinct offensive dimensions: overall performance, elite status, and plate discipline. By combining traditional batting statistics with advanced Statcast metrics — including exit velocity, launch angle, bat speed, and swing behavior — the project demonstrates how machine learning can uncover complex patterns that differentiate offensive profiles far beyond what conventional statistics reveal.
@@ -11,14 +11,14 @@ MLB Performance Analytics applies Random Forest machine learning classifiers to 
 Three target variables were engineered directly from the dataset, each capturing a different facet of batter performance:
 
 <CardGroup cols={3}>
-  <Card title="Overall Offensive Performance" icon="chart-bar">
+  <Card title="Overall Offensive Performance" icon="chart-bar" href="/models/target-variables">
     **`Rendimiento_labels`** — Batters are divided into **Low**, **Medium**, and **High** performance tiers using `pd.qcut` on wOBA (Weighted On-Base Average), ensuring a balanced class distribution across all three groups.
   </Card>
-  <Card title="Elite Status" icon="trophy">
+  <Card title="Elite Status" icon="trophy" href="/results/elite-classification">
     **`elite_hitter`** — A binary label that flags batters in the **top 20% of wOBA** as elite (1) and all others as non-elite (0). The model uses `class_weight='balanced'` to handle the inherent class imbalance.
   </Card>
-  <Card title="Plate Discipline" icon="eye">
-    **`clase_disciplina_home`** — Batters are classified as **Low (Baja)**, **Medium (Media)**, or **High (Alta)** discipline using a composite score that weighs walk rate, strikeout rate, swing-and-miss percentage, and raw whiff counts.
+  <Card title="Plate Discipline" icon="eye" href="/results/plate-discipline">
+    **`clase_disciplina_home`** — Batters are classified as **Low (Baja)**, **Medium (Media)**, or **High (Alta)** discipline using a composite score that weighs walk rate, pitch-taking behavior, plate appearances, and strikeout and swing-and-miss rates.
   </Card>
 </CardGroup>
 
@@ -32,12 +32,13 @@ The second target identifies batters who are genuinely exceptional rather than m
 
 ### Plate Discipline (`clase_disciplina_home`)
 
-The third target measures how well a batter makes decisions at the plate. A composite **`disciplina_en_home`** score is computed from four Statcast signals:
+The third target measures how well a batter makes decisions at the plate. A composite **`disciplina_en_home`** score is computed as a weighted sum of five Statcast signals:
 
-- `bb_percent` (walk rate) — positive contribution
-- `k_percent` (strikeout rate) — negative contribution
-- `swing_miss_percent` (whiff rate) — negative contribution
-- `whiffs` (raw whiff count) — negative contribution
+- `bb_percent` (walk rate) — positive contribution (×0.30)
+- `takes` (pitches taken without swinging) — positive contribution (×0.20)
+- `pa` (plate appearances) — positive contribution (×0.10)
+- `k_percent` (strikeout rate) — negative contribution (×0.20)
+- `swing_miss_percent` (whiff rate) — negative contribution (×0.10)
 
 Batters are then classified into **Baja** (Low), **Media** (Medium), and **Alta** (High) discipline using fixed-range bins with `pd.cut`.
 
@@ -54,7 +55,7 @@ The dataset covers **911 MLB batters** drawn from the 2023–2025 regular season
 | Seasons | 2023, 2024, 2025 (regular season) |
 | Source | [Baseball Savant / MLB Statcast](https://baseballsavant.mlb.com) |
 
-Key features include `woba`, `xwoba`, `ba`, `slg`, `obp`, `iso`, `babip`, `launch_speed`, `launch_angle`, `bat_speed`, `swing_length`, `barrel_percent`, `hardhit_percent`, `bb_percent`, `k_percent`, `swing_miss_percent`, `whiffs`, `swings`, `takes`, and more.
+Key features include `woba`, `xwoba`, `ba`, `slg`, `obp`, `iso`, `babip`, `launch_speed`, `launch_angle`, `bat_speed`, `swing_length`, `barrels_total`, `barrels_per_bbe_percent`, `hardhit_percent`, `bb_percent`, `k_percent`, `swing_miss_percent`, `whiffs`, `swings`, `takes`, and more.
 
 <Tip>
   The full Statcast search query used to pull this data — filtering by batter type across the 2023–2025 regular seasons — is documented at the top of the notebook in `Notebook/MLBStats.ipynb`.

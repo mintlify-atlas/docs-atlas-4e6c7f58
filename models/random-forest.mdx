@@ -1,7 +1,7 @@
 ---
 title: "Random Forest Classifier Architecture and Training Setup"
 sidebarTitle: "Random Forest"
-description: "Details of the Random Forest classifiers used for each of the three MLB batter classification tasks — hyperparameters, training procedure, and model configuration."
+description: "Configuration and training setup for three Random Forest classifiers targeting overall performance, elite status, and plate discipline in MLB batters."
 ---
 
 Three separate Random Forest classifiers are trained in this project, one for each target variable: overall performance (`Rendimiento_labels`), elite status (`elite_hitter`), and plate discipline (`clase_disciplina_home`). Random forests are an ensemble of decision trees that reduce overfitting through **bagging** (training each tree on a random bootstrap sample of the data) and **random feature selection** (evaluating only a random subset of features at each split). The result is a model that generalizes substantially better than any single decision tree.
@@ -135,7 +135,6 @@ Using a Random Forest over a standalone decision tree offers several concrete ad
         "swings",
         "whiffs",
         "takes",
-        "pa"
     ]
     X = df[features_disc]
     y = df["clase_disciplina_home"]
@@ -169,7 +168,6 @@ Using a Random Forest over a standalone decision tree offers several concrete ad
     | `swings` | Total swing count |
     | `whiffs` | Total swing-and-miss count |
     | `takes` | Pitches taken without swinging |
-    | `pa` | Plate appearances — overall activity level |
 
     ### Feature Importance Finding
 

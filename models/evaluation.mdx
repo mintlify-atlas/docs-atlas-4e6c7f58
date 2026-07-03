@@ -1,7 +1,7 @@
 ---
 title: "Model Evaluation: Accuracy, Precision, Recall, and F1 Score"
 sidebarTitle: "Evaluation"
-description: "How the three Random Forest classifiers are evaluated using accuracy, precision, recall, and F1 score metrics from scikit-learn, with a Decision Tree baseline for comparison."
+description: "Evaluating three Random Forest classifiers with accuracy, precision, recall, and F1 score using scikit-learn, benchmarked against a Decision Tree baseline."
 ---
 
 Each classifier is evaluated on a held-out test set representing 20% of the data — batters the model never saw during training. Four standard classification metrics from scikit-learn are computed for every model: accuracy, precision, recall, and F1 score. A Decision Tree baseline trained on the same features provides a concrete reference point for measuring the improvement that comes from using a Random Forest ensemble.

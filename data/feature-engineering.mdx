@@ -1,7 +1,7 @@
 ---
-title: "Feature Engineering for MLB Batter Classification"
+title: "Feature Engineering for MLB Batter Classification Models"
 sidebarTitle: "Feature Engineering"
-description: "How raw Statcast metrics are selected and transformed into feature sets for three Random Forest classifiers: performance, elite status, and plate discipline."
+description: "How raw Statcast metrics are selected and transformed into feature sets for three Random Forest classifiers: performance, elite, and plate discipline."
 ---
 
 Feature engineering in this project involves two distinct operations: **selecting the right subsets of the 76 Statcast columns** as inputs (`X`) for each of the three Random Forest classifiers, and **constructing target labels** (`y`) from computed thresholds applied to the raw statistical columns. Rather than feeding all 76 features into each model, each classifier is trained on a focused feature set whose variables have a strong theoretical and empirical connection to the outcome being predicted. The target labels are not sourced from a pre-existing column — they are derived by applying quantile cuts and threshold rules to wOBA and discipline metrics, turning continuous batting statistics into discrete class labels.
@@ -180,18 +180,32 @@ df["clase_disciplina_home"] = pd.cut(
 
 ## Train/Test Split
 
-All three models use an **80/20 train/test split** with `random_state=42` for reproducibility. The Elite and Discipline models also use **stratification** to preserve the class distribution in both splits, which is critical given the class imbalance in `elite_hitter` and the uneven bin sizes in `clase_disciplina_home`.
+All three models use an **80/20 train/test split** with `random_state=42` for reproducibility. The Elite and Discipline models also pass `stratify=y` to preserve the class distribution in both splits, which is critical given the class imbalance in `elite_hitter` and the uneven bin sizes in `clase_disciplina_home`.
+
+**Performance model** — balanced target, no stratification needed:
+
+```python
+from sklearn.model_selection import train_test_split
+
+X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.2, random_state=42)
+```
+
+**Elite and Discipline models** — imbalanced targets, stratification required:
 
 ```python
 from sklearn.model_selection import train_test_split
 
 X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42, stratify=y
+    X,
+    y,
+    test_size=0.2,
+    random_state=42,
+    stratify=y
 )
 ```
 
 <Note>
-  The Performance model's original notebook implementation uses the same split parameters but without explicit `stratify=y`, since the three-class wOBA quantile split already produces a balanced distribution. The Elite and Discipline models explicitly pass `stratify=y` to ensure the minority class is proportionally represented in the test set.
+  The Performance model uses uppercase `Y` for the target variable (`Y = df["Rendimiento_labels"]`) and omits `stratify` because `pd.qcut` already produces a balanced three-class distribution. The Elite and Discipline models use lowercase `y` and explicitly pass `stratify=y` to ensure the minority class is proportionally represented in the test set.
 </Note>
 
 ---

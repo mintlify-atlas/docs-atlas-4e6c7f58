@@ -1,7 +1,7 @@
 ---
-title: "Plate Discipline Classification: Analyzing Strike Zone Decisions"
+title: "Plate Discipline Classification: Strike Zone Analysis"
 sidebarTitle: "Discipline Results"
-description: "Results of the Random Forest model that classifies MLB batter plate discipline — their ability to identify pitches, lay off balls, and make optimal swing decisions."
+description: "Random Forest plate discipline classifier results: walk rate, swing-miss rate, and strikeout analysis across three MLB batter discipline tiers."
 ---
 
 Plate discipline classification measures how well a batter makes decisions at the plate — whether they swing at strikes, lay off balls outside the zone, and generate productive contact when they do swing. Unlike the performance and elite models, which focus primarily on offensive outcomes, this model targets the **process** behind those outcomes: the pitch-by-pitch decision quality that drives walk rates, strikeout rates, and swing-and-miss frequency. The model uses Statcast metrics like swing-miss rate, walk rate, strikeout rate, raw takes, whiffs, and observed-vs-expected outcome differential to classify each batter as **Baja** (Low), **Media** (Medium), or **Alta** (High) discipline.
@@ -127,7 +127,7 @@ Contrasting two players from the dataset illustrates how plate discipline can ta
 
 Juan Soto is widely regarded as having one of the best eyes at the plate in baseball, and the Statcast data confirms it. His discipline profile:
 
-- **bb_percent ≈ 18%** — Elite walk rate, consistently in the top 5% of MLB batters
+- **bb_percent ≈ 18.2%** — Elite walk rate, consistently in the top 5% of MLB batters
 - **swing_miss_percent ≈ 21.5%** — Well below the league average, meaning when Soto swings, he makes contact
 
 Soto's offensive production is not primarily built on raw power — it is built on zone control. By drawing an exceptional volume of walks and rarely chasing, he maximizes plate appearances that result in baserunners. His **Alta** discipline classification directly translates to his high wOBA (0.402), confirming that plate discipline is a genuine driver — not just a byproduct — of his offensive value.

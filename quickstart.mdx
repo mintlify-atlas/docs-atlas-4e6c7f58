@@ -1,7 +1,7 @@
 ---
-title: "Get Started with MLB Performance Analytics"
+title: "Quickstart: Run the MLB Performance Analytics Pipeline"
 sidebarTitle: "Quickstart"
-description: "Set up your Python environment and run the MLB Performance Analytics notebook to classify batters using Random Forest models in under 10 minutes."
+description: "Set up your Python environment and run the MLB Performance Analytics notebook to classify MLB batters using Random Forest models in under 10 minutes."
 ---
 
 This guide walks you through everything you need to go from a fresh clone to a fully running classification pipeline. By the end, you will have loaded the 911-batter Statcast dataset, engineered the three target variables, trained all three Random Forest classifiers, evaluated their performance, and generated feature importance charts — all inside a single Jupyter notebook.
@@ -103,13 +103,13 @@ Seaborn and Matplotlib visualizations explore distributions of key metrics (wOBA
 Three classification targets are constructed directly from dataset columns:
 - `Rendimiento_labels` — `pd.qcut` on `woba` into Low / Medium / High thirds
 - `elite_hitter` — binary flag for batters at or above the 80th percentile of `woba`
-- `clase_disciplina_home` — `pd.cut` on a composite `disciplina_en_home` score (walk rate, strikeout rate, whiff rate, raw whiffs) into Baja / Media / Alta
+- `clase_disciplina_home` — `pd.cut` on a composite `disciplina_en_home` score (walk rate ×0.30, takes ×0.20, plate appearances ×0.10, minus strikeout rate ×0.20 and whiff rate ×0.10) into Baja / Media / Alta
 
 **4. Model Training — Three Classifiers**
-Each target gets its own `RandomForestClassifier` trained on an 80/20 stratified split:
+Each target gets its own `RandomForestClassifier` trained on an 80/20 train/test split (stratified for the elite and discipline models):
 - **Overall Performance model**: `RandomForestClassifier(n_estimators=300, max_depth=8, random_state=42)`
 - **Elite Status model**: `RandomForestClassifier(n_estimators=300, max_depth=8, class_weight='balanced', random_state=42)`
-- **Plate Discipline model**: trained on the discipline-specific feature subset (`bb_percent`, `k_percent`, `swing_miss_percent`, `whiffs`)
+- **Plate Discipline model**: `RandomForestClassifier(n_estimators=300, max_depth=8, class_weight='balanced', random_state=42)` trained on the discipline-specific feature subset (`bb_percent`, `k_percent`, `swing_miss_percent`, `swings`, `whiffs`, `takes`, `pa`)
 
 **5. Model Evaluation**
 Each model is evaluated with accuracy, precision, recall, and F1-score via Scikit-Learn's `classification_report`. Results are printed per-class so performance on minority classes (e.g., elite batters) is clearly visible.
